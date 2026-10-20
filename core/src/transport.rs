@@ -1,0 +1,169 @@
+use crate::Session;
+use idevice::{
+    RsdService,
+    lockdown::LockdownClient,
+    remote_pairing::{
+        PairableHost, PairableHostInfo, PeerDevice, RemotePairingClient, RpPairingFile,
+        RpPairingSocket, connect_tls_psk_tunnel_native,
+    },
+    rsd::RsdHandshake,
+    tcp::{adapter::Adapter, handle::AdapterHandle},
+};
+use serde_json::json;
+use std::{
+    net::{IpAddr, Ipv4Addr},
+    time::Duration,
+};
+use tokio::net::{TcpListener, TcpStream};
+
+pub fn target_address(s: &str) -> Result<IpAddr, String> {
+    let ip: Ipv4Addr = s
+        .trim()
+        .parse()
+        .map_err(|_| "Введи IPv4 второго iPhone из настроек Wi-Fi")?;
+    if !ip.is_private() || ip.octets()[3] == 0 || ip.octets()[3] == 255 {
+        return Err("Нужен локальный адрес второго iPhone (например, 192.168.1.42)".into());
+    }
+    Ok(IpAddr::V4(ip))
+}
+pub async fn pair(ip: IpAddr, session: &Session) -> Result<(RpPairingFile, PeerDevice), String> {
+    let identity = format!("SideRelay-{}", uuid::Uuid::new_v4());
+    let mut record = RpPairingFile::generate(&identity);
+    let info = PairableHostInfo::generate("SideRelay", "Mac17,7");
+    let listener = TcpListener::bind((Ipv4Addr::UNSPECIFIED, 0))
+        .await
+        .map_err(|_| "Не удалось открыть локальный порт")?;
+    let port = listener
+        .local_addr()
+        .map_err(|_| "Не удалось получить порт")?
+        .port();
+    session.emit(json!({"type":"advertise","name":record.identifier(),"port":port,"txt":info.mdns_txt_records(record.identifier())}));
+    session.progress("pairing", 0.05, "На втором iPhone: Настройки → Конфиденциальность и безопасность → Режим разработчика → Сопряжение с SideRelay. Требуется iOS 27.");
+    let (socket, _) = tokio::time::timeout(Duration::from_secs(240), async {
+        loop {
+            let (s, addr) = listener.accept().await?;
+            if addr.ip() == ip { return Ok::<_, std::io::Error>((s, addr)); }
+        }
+    }).await.map_err(|_| "Второй iPhone не подключился за 4 минуты. Проверь его IP, iOS 27, Developer Mode и общую Wi-Fi сеть.".to_string())?
+    .map_err(|_| "Не удалось принять соединение второго iPhone")?;
+    let mut host = PairableHost::new(RpPairingSocket::new_device(socket), info);
+    let peer = tokio::time::timeout(
+        Duration::from_secs(180),
+        host.accept(&mut record, |pin| async move {
+            session.emit(json!({"type":"pin","pin":pin}));
+        }),
+    )
+    .await
+    .map_err(|_| "Время ввода кода сопряжения истекло".to_string())?
+    .map_err(|_| "Сопряжение отклонено. Разблокируй второй iPhone и повтори ввод кода.")?;
+    session.emit(json!({"type":"paired"}));
+    Ok((record, peer))
+}
+
+pub struct Link {
+    pub handle: AdapterHandle,
+    pub handshake: RsdHandshake,
+}
+impl Link {
+    pub async fn connect(ip: IpAddr, port: u16, record: &RpPairingFile) -> Result<Self, String> {
+        tokio::time::timeout(Duration::from_secs(40), async {
+            let socket = TcpStream::connect((ip, port))
+                .await
+                .map_err(|_| "Нет соединения со вторым iPhone")?;
+            let mut client = RemotePairingClient::new(RpPairingSocket::new(socket), "SideRelay");
+            client
+                .attempt_pair_verify()
+                .await
+                .map_err(|_| "iPhone не начал проверку pairing")?;
+            client
+                .validate_pairing(&mut record.clone())
+                .await
+                .map_err(|_| "iPhone не подтвердил ключи pairing")?;
+            let tunnel_port = client
+                .create_tcp_listener()
+                .await
+                .map_err(|_| "iPhone отказал в создании туннеля")?;
+            let tunnel = connect_tls_psk_tunnel_native(
+                TcpStream::connect((ip, tunnel_port))
+                    .await
+                    .map_err(|_| "Туннель iPhone недоступен")?,
+                client.encryption_key(),
+            )
+            .await
+            .map_err(|_| "Не удалось установить зашифрованный туннель")?;
+            let parameters = tunnel.info.clone();
+            let mut adapter = Adapter::new(
+                Box::new(tunnel.into_inner()),
+                parameters
+                    .client_address
+                    .parse()
+                    .map_err(|_| "Неверный адрес туннеля")?,
+                parameters
+                    .server_address
+                    .parse()
+                    .map_err(|_| "Неверный адрес iPhone")?,
+            );
+            adapter.set_mss((parameters.mtu as usize).saturating_sub(60).max(536));
+            let mut handle = adapter.to_async_handle();
+            let stream = handle
+                .connect(parameters.server_rsd_port)
+                .await
+                .map_err(|_| "RSD-служба недоступна")?;
+            let handshake = RsdHandshake::new(stream)
+                .await
+                .map_err(|_| "iPhone не предоставил список служб")?;
+            Ok(Self { handle, handshake })
+        })
+        .await
+        .map_err(|_| {
+            "Подключение к службам второго iPhone заняло слишком много времени".to_string()
+        })?
+    }
+    pub async fn identity(&mut self) -> Result<(String, String, String), String> {
+        tokio::time::timeout(Duration::from_secs(20), async {
+            let mut lockdown = LockdownClient::connect_rsd(&mut self.handle, &mut self.handshake)
+                .await
+                .map_err(|_| "Служба идентификации iPhone недоступна")?;
+            let mut values = Vec::new();
+            for key in ["UniqueDeviceID", "DeviceName", "ProductVersion"] {
+                let value = lockdown
+                    .get_value(Some(key), None)
+                    .await
+                    .map_err(|_| "iPhone не сообщил данные устройства")?;
+                values.push(
+                    value
+                        .as_string()
+                        .ok_or("Неверный ответ iPhone")?
+                        .to_string(),
+                );
+            }
+            if values[0].len() < 24 {
+                return Err("Неверный UDID iPhone".into());
+            }
+            Ok((values.remove(0), values.remove(0), values.remove(0)))
+        })
+        .await
+        .map_err(|_| "iPhone не ответил на запрос идентификации".to_string())?
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn only_local_target_addresses() {
+        for ip in [
+            "8.8.8.8",
+            "127.0.0.1",
+            "169.254.169.254",
+            "0.0.0.0",
+            "192.168.1.255",
+            "attacker.example",
+            "::1",
+        ] {
+            assert!(target_address(ip).is_err(), "{ip}");
+        }
+        assert!(target_address("192.168.1.42").is_ok());
+        assert!(target_address("10.0.0.2").is_ok());
+    }
+}

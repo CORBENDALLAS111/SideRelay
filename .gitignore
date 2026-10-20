@@ -1,0 +1,9 @@
+core/target/
+build/
+SideRelay.xcodeproj/
+.DS_Store
+*.ipa
+*.p12
+*.mobileprovision
+*.mobiledevicepairing
+output/
