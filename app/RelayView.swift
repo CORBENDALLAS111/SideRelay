@@ -119,10 +119,23 @@ struct RelayView: View {
             Text("Держи оба телефона разблокированными. Сворачивание SideRelay завершает сессию. Кабель и LocalDevVPN для этого Wi-Fi режима не нужны.")
             Text("Бесплатная подпись обычно действует 7 дней. Сертификат и App ID остаются в Apple Account. Замена сертификата может отключить уже установленные приложения — SideRelay спросит отдельно. При установке SideStore / AltStore движок может встроить ключ подписи в приложение.")
             Link("Исходники и инструкция ↗",destination:URL(string:"https://github.com/CORBENDALLAS111/SideRelay")!)
+            NavigationLink("Лицензии библиотек") { LicenseView() }
         }.font(.caption).foregroundStyle(.secondary)
     }
     private func caption(_ number:String,_ title:String) -> some View {
         HStack { Text(number).font(.caption.monospaced()).foregroundStyle(relayAccent); Text(title).font(.headline) }
+    }
+}
+
+private struct LicenseView: View {
+    var body: some View {
+        ScrollView {
+            Text(notices).font(.caption.monospaced()).textSelection(.enabled).padding(20)
+        }.navigationTitle("Лицензии")
+    }
+    private var notices: String {
+        guard let path = Bundle.main.url(forResource:"ThirdPartyNotices",withExtension:"txt"), let text = try? String(contentsOf:path,encoding:.utf8) else { return "Тексты лицензий доступны в исходном репозитории и пакетах Cargo." }
+        return text
     }
 }
 

@@ -36,11 +36,13 @@ jobs:
           cargo build --manifest-path core/Cargo.toml --locked --release --target aarch64-apple-ios
       - name: Build application
         run: |
+          python3 scripts/licenses.py
           xcodegen generate
           xcodebuild -project SideRelay.xcodeproj -scheme SideRelay -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build/DerivedData CODE_SIGNING_ALLOWED=NO build
       - name: Package unsigned IPA for SideStore
         run: |
           python3 scripts/package.py
+          python3 scripts/source_bundle.py
           shasum -a 256 build/SideRelay.ipa > build/SideRelay.ipa.sha256
       - uses: actions/upload-artifact@v4
         with:
@@ -48,9 +50,10 @@ jobs:
           path: |
             build/SideRelay.ipa
             build/SideRelay.ipa.sha256
+            build/SideRelay-source.zip
           retention-days: 14
       - name: Publish tagged release
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" build/SideRelay.ipa build/SideRelay.ipa.sha256 --title "SideRelay $GITHUB_REF_NAME" --notes-file RELEASE_NOTES.md --prerelease
+        run: gh release create "$GITHUB_REF_NAME" build/SideRelay.ipa build/SideRelay.ipa.sha256 build/SideRelay-source.zip --title "SideRelay $GITHUB_REF_NAME" --notes-file RELEASE_NOTES.md --prerelease

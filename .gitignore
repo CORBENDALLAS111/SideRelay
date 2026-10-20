@@ -7,3 +7,5 @@ SideRelay.xcodeproj/
 *.mobileprovision
 *.mobiledevicepairing
 output/
+app/Resources/ThirdPartyNotices.txt
+__pycache__/

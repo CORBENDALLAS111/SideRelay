@@ -20,7 +20,7 @@ struct RelayChallenge: Identifiable {
 }
 
 @MainActor @Observable
-final class RelayModel: NSObject, NetServiceDelegate, NetServiceBrowserDelegate {
+final class RelayModel: NSObject, @preconcurrency NetServiceDelegate, @preconcurrency NetServiceBrowserDelegate {
     var targetIP = ""
     var email = ""
     var password = ""
@@ -50,7 +50,8 @@ final class RelayModel: NSObject, NetServiceDelegate, NetServiceBrowserDelegate 
         let root = FileManager.default.temporaryDirectory
         for path in (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? [] {
             let name = path.lastPathComponent
-            let stem = name.hasSuffix("_extracted") ? String(name.dropLast("_extracted".count)) : path.deletingPathExtension().lastPathComponent
+            let filename = name.hasSuffix("_extracted") ? String(name.dropLast("_extracted".count)) : name
+            let stem = (filename as NSString).deletingPathExtension
             if stem.hasPrefix("SideRelay-"), UUID(uuidString: String(stem.dropFirst("SideRelay-".count))) != nil {
                 try? FileManager.default.removeItem(at: path)
             }

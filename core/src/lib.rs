@@ -95,6 +95,7 @@ impl Drop for Config {
 }
 
 async fn run(mut config: Config, session: Arc<Session>) -> Result<(), String> {
+    let _files = SessionFiles::new(&config.ipa_path)?;
     let ip = transport::target_address(&config.target_ip)?;
     if config.email.trim().is_empty() || config.password.is_empty() {
         return Err("Введи Apple ID и пароль".into());
@@ -102,14 +103,16 @@ async fn run(mut config: Config, session: Arc<Session>) -> Result<(), String> {
     if !config.anisette.starts_with("https://") || config.anisette.len() > 512 {
         return Err("Anisette должен использовать HTTPS".into());
     }
-    let _files = SessionFiles::new(&config.ipa_path)?;
     session.progress("validating", 0.01, "Проверяем IPA на этом iPhone…");
     let info = archive::inspect(&config.ipa_path)?;
     let (record, peer) = transport::pair(ip, &session).await?;
     let port = session.endpoint(&peer, ip).await?;
     let mut link = transport::Link::connect(ip, port, &record).await?;
     let (udid, name, version) = link.identity().await?;
-    session.answer("device", json!({"name":name,"version":version,"udid":udid,"app":info.name,"bundle":info.bundle_id})).await?;
+    let confirmation = session.answer("device", json!({"name":name,"version":version,"udid":udid,"app":info.name,"bundle":info.bundle_id})).await?;
+    if confirmation["action"] != "confirm" {
+        return Err("Устройство не подтверждено пользователем".into());
+    }
     let signed = signing::sign(&mut config, &udid, session.clone()).await?;
     // Reconnect after signing/2FA: an idle device tunnel may already have expired.
     drop(link);
@@ -134,7 +137,7 @@ async fn run(mut config: Config, session: Arc<Session>) -> Result<(), String> {
     Ok(())
 }
 
-// isideload extracts to <temp>/<IPA stem>_extracted. Accept only our UUID-named input.
+// isideload extracts to <temp>/<IPA filename>_extracted. Accept only our UUID-named input.
 // Never remove a caller-selected arbitrary directory. Drop also runs on cancellation/error.
 struct SessionFiles {
     ipa: PathBuf,
@@ -159,7 +162,7 @@ impl SessionFiles {
         }
         Ok(Self {
             ipa: resolved,
-            extracted: temp.join(format!("{stem}_extracted")),
+            extracted: temp.join(format!("{stem}.ipa_extracted")),
         })
     }
 }
@@ -263,5 +266,62 @@ pub extern "C" fn relay_release(id: u64) {
 pub unsafe extern "C" fn relay_string_free(ptr: *mut c_char) {
     if !ptr.is_null() {
         drop(unsafe { CString::from_raw(ptr) });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn session() -> Arc<Session> {
+        let (sender, receiver) = mpsc::unbounded_channel();
+        Arc::new(Session {
+            events: Mutex::default(),
+            sender,
+            input: tokio::sync::Mutex::new(receiver),
+            cancel: Notify::new(),
+        })
+    }
+    #[test]
+    fn progress_does_not_overwrite_challenges() {
+        let s = session();
+        s.progress("signing", 0.3, "First");
+        s.progress("signing", 0.4, "Second");
+        s.emit(json!({"type":"challenge","token":"abc"}));
+        s.progress("signing", 0.5, "Third");
+        let queue = s.events.lock().unwrap();
+        assert_eq!(queue.len(), 3);
+        assert_eq!(queue[1]["token"], "abc");
+    }
+    #[tokio::test]
+    async fn challenge_rejects_stale_replies_and_honors_abort() {
+        let s = session();
+        let waiting = s.clone();
+        let task = tokio::spawn(async move { waiting.answer("certificate", json!({})).await });
+        tokio::task::yield_now().await;
+        let token = s.events.lock().unwrap()[0]["token"].clone();
+        s.sender
+            .send(json!({"token":"old","action":"revoke"}))
+            .unwrap();
+        s.sender
+            .send(json!({"token":token,"action":"abort"}))
+            .unwrap();
+        assert!(task.await.unwrap().is_err());
+    }
+    #[test]
+    fn scratch_cleanup_matches_the_upstream_extraction_path() {
+        let path = std::env::temp_dir().join(format!("SideRelay-{}.ipa", uuid::Uuid::new_v4()));
+        std::fs::write(&path, b"fixture").unwrap();
+        let guard = SessionFiles::new(&path).unwrap();
+        assert_eq!(
+            guard.extracted.file_name().unwrap().to_str().unwrap(),
+            format!("{}_extracted", path.file_name().unwrap().to_str().unwrap())
+        );
+        std::fs::create_dir(&guard.extracted).unwrap();
+        std::fs::write(guard.extracted.join("fixture.key"), b"test-only").unwrap();
+        let extracted = guard.extracted.clone();
+        drop(guard);
+        assert!(!path.exists());
+        assert!(!extracted.exists());
+        assert!(SessionFiles::new(std::path::Path::new("/tmp/user.ipa")).is_err());
     }
 }

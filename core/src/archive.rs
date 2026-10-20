@@ -16,6 +16,9 @@ pub fn inspect(path: &Path) -> Result<AppInfo, String> {
         .metadata()
         .map_err(|_| "Не удалось прочитать IPA")?
         .len();
+    if bytes == 0 || bytes > 128 * 1024 * 1024 {
+        return Err("Размер IPA должен быть от 1 байта до 128 МБ".into());
+    }
     let mut archive = zip::ZipArchive::new(file).map_err(|_| "IPA должен быть ZIP-архивом")?;
     if archive.len() > 30_000 {
         return Err("Слишком много файлов в IPA".into());
