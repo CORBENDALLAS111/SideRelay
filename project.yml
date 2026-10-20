@@ -4,6 +4,9 @@ options:
   deploymentTarget:
     iOS: "18.0"
 settings:
+  configs:
+    Debug:
+      SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) DEBUG"
   base:
     SWIFT_VERSION: "5.0"
     SWIFT_STRICT_CONCURRENCY: targeted

@@ -16,7 +16,7 @@ arch = platform.machine()
 sdk = run('xcrun','--sdk','iphonesimulator','--show-sdk-path')
 subprocess.run(['xcrun','clang','-target',f'{arch}-apple-ios18.0-simulator','-isysroot',sdk,'-c','scripts/PreviewCore.c','-o',str(core/'stub.o')],check=True)
 subprocess.run(['xcrun','ar','rcs',str(core/'libsiderelay_core.a'),str(core/'stub.o')],check=True)
-subprocess.run(['xcodebuild','-project','SideRelay.xcodeproj','-scheme','SideRelay','-configuration','Debug','-sdk','iphonesimulator','-destination','generic/platform=iOS Simulator','-arch',arch,'-derivedDataPath','build/Preview','CODE_SIGNING_ALLOWED=NO',f'LIBRARY_SEARCH_PATHS={core}','build'],check=True)
+subprocess.run(['xcodebuild','-project','SideRelay.xcodeproj','-scheme','SideRelay','-configuration','Debug','-sdk','iphonesimulator','-destination','generic/platform=iOS Simulator',f'ARCHS={arch}','-derivedDataPath','build/Preview','CODE_SIGNING_ALLOWED=NO',f'LIBRARY_SEARCH_PATHS={core}','build'],check=True)
 runtimes = json.loads(run('xcrun','simctl','list','runtimes','-j'))['runtimes']
 compatible = [r for r in runtimes if r.get('isAvailable') and r['identifier'].split('.')[-1].startswith('iOS-26')]
 if not compatible:

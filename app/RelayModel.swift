@@ -77,6 +77,7 @@ final class RelayModel: NSObject, @preconcurrency NetServiceDelegate, @preconcur
         switch stage {
         case "pairing": return "Ждём второй iPhone"
         case "handshake": return "Создаём код"
+        case "connecting": return "Проверяем iPhone"
         case "auth": return "Вход в Apple"
         case "signing": return "Подписываем"
         case "installing": return "Устанавливаем"
@@ -225,6 +226,7 @@ final class RelayModel: NSObject, @preconcurrency NetServiceDelegate, @preconcur
         case "pin_clear": pin = ""
         case "paired":
             pin = ""
+            stage = "connecting"
             advertisement?.stop()
             advertisement = nil
             message = "Код принят. Ищем защищённую службу второго iPhone…"

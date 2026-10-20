@@ -11,6 +11,11 @@ struct AccountSheet: View {
                     SecureField("Пароль",text:$model.password)
                 } footer: { Text("Только на время этой сессии.") }
                 Section { Toggle("Разрешить подпись",isOn:$model.consent) } footer: { Text("Регистрация второго iPhone, сертификата и App ID в этом аккаунте.") }
+                Section {
+                    DisclosureGroup("О подписи") {
+                        Text("Сертификат и App ID остаются в Apple Account. При подписи SideStore или другого поддерживаемого sideloader ключ сертификата может попасть в установленное приложение.").font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
                 GlassAction(title:"Готово",symbol:"checkmark",enabled:model.hasAccount) { dismiss() }.listRowBackground(Color.clear)
             }.navigationTitle("Apple Account").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement:.cancellationAction) { Button("Закрыть") { dismiss() } } }.tint(relayTint)

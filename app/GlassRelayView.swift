@@ -21,7 +21,7 @@ struct RelayView: View {
                         VStack(spacing:7) {
                             Text(model.statusTitle).font(.system(size:30,weight:.semibold,design:.rounded)).multilineTextAlignment(.center)
                             if model.busy && model.pin.isEmpty {
-                                Text(model.stage == "pairing" ? "Выбери SideRelay на втором iPhone" : model.message).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                                Text(model.message).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
                             }
                         }
                         LiquidGroup {
