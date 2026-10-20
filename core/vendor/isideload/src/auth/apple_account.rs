@@ -1194,6 +1194,7 @@ mod siderelay_resync_regression {
     // No Apple Account, password or network service is used.
     #[tokio::test]
     async fn proof_uses_refreshed_anisette_after_hsc_434() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let url = format!("http://{}/login", listener.local_addr().unwrap());
         let server = std::thread::spawn(move || {

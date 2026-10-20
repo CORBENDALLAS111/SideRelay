@@ -140,6 +140,42 @@ mod tests {
         assert_eq!(failure, Failure::Developer(2160));
         assert!(failure.message("Developer").contains("Подтверди email"));
     }
+    #[tokio::test]
+    async fn http_failure_hides_sensitive_url_and_keeps_status() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!(
+            "http://{}/secret-account?token=private",
+            listener.local_addr().unwrap()
+        );
+        let server = tokio::spawn(async move {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = [0; 4096];
+            socket.read(&mut request).await.unwrap();
+            socket.write_all(b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await.unwrap();
+        });
+        let error = reqwest::Client::builder()
+            .no_proxy()
+            .build()
+            .unwrap()
+            .get(url)
+            .send()
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap_err();
+        let report: rootcause::Report = rootcause::report!(error)
+            .context("private upstream context")
+            .into();
+        let failure = Failure::from_report(&report);
+        assert_eq!(failure, Failure::Http(503));
+        let public = failure.message("Вход");
+        for secret in ["secret-account", "private", "token=", "127.0.0.1"] {
+            assert!(!public.contains(secret));
+        }
+        server.await.unwrap();
+    }
     #[test]
     fn unknown_errors_never_echo_upstream_text() {
         let report = rootcause::report!("URL with secret account and token");

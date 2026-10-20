@@ -22,7 +22,7 @@ use crate::anisette::{
     AnisetteDataResponse,
     remote_v3::{state::AnisetteState, websocket::WsMessage},
 };
-use crate::auth::grandslam::GrandSlam;
+use crate::auth::grandslam::{GrandSlam, GrandSlamErrorChecker};
 use crate::util::plist::PlistDataExtract;
 use crate::util::storage::{SideloadingStorage, new_storage};
 
@@ -339,7 +339,9 @@ impl RemoteV3AnisetteProvider {
                             None,
                         )
                         .await
-                        .context("Failed to send start provisioning request")?;
+                        .context("Failed to send start provisioning request")?
+                        .check_grandslam_error()
+                        .context("Apple refused anisette start provisioning")?;
 
                     let spim = response
                         .get_str("spim")
@@ -371,7 +373,9 @@ impl RemoteV3AnisetteProvider {
                             None,
                         )
                         .await
-                        .context("Failed to send end provisioning request")?;
+                        .context("Failed to send end provisioning request")?
+                        .check_grandslam_error()
+                        .context("Apple refused anisette end provisioning")?;
 
                     ws.send_text(
                         serde_json::json!({

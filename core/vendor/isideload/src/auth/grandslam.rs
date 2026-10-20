@@ -65,6 +65,8 @@ impl GrandSlam {
             .send()
             .await
             .context("Failed to fetch URL Bag")?
+            .error_for_status()
+            .context("Apple URL Bag request refused")?
             .text()
             .await
             .context("Failed to read URL Bag response text")?;
@@ -253,6 +255,7 @@ impl GrandSlam {
         let cert = Certificate::from_der(APPLE_ROOT)?;
         #[cfg(not(feature = "wasm"))]
         let client = ClientBuilder::new()
+            .timeout(std::time::Duration::from_secs(30))
             .add_root_certificate(cert)
             .http1_title_case_headers()
             .danger_accept_invalid_certs(debug)

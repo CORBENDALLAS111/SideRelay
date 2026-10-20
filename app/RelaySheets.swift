@@ -19,7 +19,7 @@ struct AccountSheet: View {
                 GlassAction(title:"Готово",symbol:"checkmark",enabled:model.hasAccount) { dismiss() }.listRowBackground(Color.clear)
             }.navigationTitle("Apple Account").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement:.cancellationAction) { Button("Закрыть") { dismiss() } } }.tint(relayTint)
-        }.presentationDetents([.medium,.large])
+        }.presentationDetents([.large])
     }
 }
 struct SettingsSheet: View {
