@@ -249,10 +249,10 @@ pub unsafe extern "C" fn relay_reply(id: u64, json: *const c_char) {
         return;
     }
     let mut bytes = unsafe { CStr::from_ptr(json) }.to_bytes().to_vec();
-    if let Ok(v) = serde_json::from_slice(&bytes) {
-        if let Some(s) = sessions().lock().unwrap().get(&id) {
-            let _ = s.sender.send(v);
-        }
+    if let Ok(v) = serde_json::from_slice(&bytes)
+        && let Some(s) = sessions().lock().unwrap().get(&id)
+    {
+        let _ = s.sender.send(v);
     }
     bytes.zeroize();
 }

@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 struct RelayView: View {
     @Bindable var model:RelayModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicType
     @State private var picking = false
     @State private var account = false
     @State private var settings = false
@@ -85,9 +86,6 @@ struct RelayView: View {
             .sheet(isPresented:$help,onDismiss:{ hasSeenOnboarding = true }) { ConnectionHelp() }
             .sheet(item:$model.challenge) { challenge in ChallengeView(model:model,challenge:challenge).interactiveDismissDisabled() }
         }
-        #if DEBUG
-        .modifier(RelayPreviewType())
-        #endif
     }
     private var setup: some View {
         VStack(spacing:0) {
@@ -129,8 +127,13 @@ struct RelayView: View {
     private var liveSession: some View {
         VStack(spacing:22) {
             if !model.pin.isEmpty {
-                Text(model.pin).font(.system(size:pinFontSize,weight:.medium,design:.monospaced)).tracking(6).minimumScaleFactor(0.55).lineLimit(1).contentTransition(.numericText()).accessibilityLabel("Код сопряжения").accessibilityValue(model.pin.map(String.init).joined(separator:" "))
-                Text("Введи на целевом устройстве").font(.subheadline).foregroundStyle(.secondary)
+                Group {
+                    if dynamicType.isAccessibilitySize {
+                        VStack(spacing:8) { Text(String(model.pin.prefix(3))); Text(String(model.pin.suffix(3))) }
+                    } else { Text(model.pin) }
+                }.font(.system(size:pinFontSize,weight:.medium,design:.monospaced)).tracking(4).minimumScaleFactor(0.4).lineLimit(1).contentTransition(.numericText())
+                    .accessibilityElement(children:.ignore).accessibilityLabel("Код сопряжения").accessibilityValue(model.pin.map(String.init).joined(separator:" "))
+                Text("Введи на целевом устройстве").font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
             } else if model.stage == .pairing || model.stage == .handshake {
                 Text("··· ···").font(.system(size:pinFontSize,weight:.medium,design:.monospaced)).tracking(6).foregroundStyle(.tertiary)
                 Text(model.stage == .handshake ? "Готовим код…" : "Код появится после подключения").font(.caption).foregroundStyle(.secondary)
@@ -222,7 +225,7 @@ private struct InstallationSuccess: View {
 }
 
 #if DEBUG
-private struct RelayPreviewType: ViewModifier {
+struct RelayPreviewType: ViewModifier {
     @ViewBuilder func body(content: Content) -> some View {
         let args = ProcessInfo.processInfo.arguments
         if let index = args.firstIndex(of:"--ui-preview"), args.count > index + 1, args[index + 1] == "large" {

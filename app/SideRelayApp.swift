@@ -8,6 +8,9 @@ struct SideRelayApp: App {
     var body: some Scene {
         WindowGroup {
             RelayView(model: model)
+                #if DEBUG
+                .modifier(RelayPreviewType())
+                #endif
                 .preferredColorScheme(.dark)
                 .onChange(of: phase) { _, value in
                     if value == .background { model.enterBackground() }
