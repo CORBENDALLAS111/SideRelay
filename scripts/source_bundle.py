@@ -16,7 +16,7 @@ config = root / "core/.cargo"
 config.mkdir(exist_ok=True)
 # Cargo config is discovered from the working directory. Build the bundled sources
 # with `cd core` and `cargo build ...`; vendor paths are relative to this core root.
-(config / "config.toml").write_text(result.stdout.replace(str(vendor), "../vendor"), encoding="utf-8")
+(config / "config.toml").write_text(result.stdout.replace(str(vendor), "../vendor").replace(str(vendor).replace('\\', '/'), "../vendor"), encoding="utf-8")
 (root / "REBUILD.txt").write_text(
     "Complete application and dependency sources for modification and relinking.\n"
     "The application is MIT. apple-codesign-quick is LGPL-2.1-or-later.\n"
