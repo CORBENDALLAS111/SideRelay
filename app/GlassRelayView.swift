@@ -17,7 +17,6 @@ struct RelayView: View {
                 RelayBackdrop()
                 ScrollView {
                     VStack(spacing:24) {
-                        ConnectionArt(active:model.busy,complete:model.installed).frame(height:185).accessibilityHidden(true)
                         VStack(spacing:7) {
                             Text(model.statusTitle).font(.system(size:30,weight:.semibold,design:.rounded)).multilineTextAlignment(.center)
                             if model.busy && model.pin.isEmpty {
@@ -33,7 +32,7 @@ struct RelayView: View {
                         }
                         if model.busy { GlassAction(title:"Отменить",symbol:"xmark",prominent:false) { model.cancel() } }
                         else { GlassAction(title:"Установить",symbol:"arrow.up.right",enabled:model.canStart) { model.start() } }
-                        if !model.busy { Text("Оба iPhone в одной Wi-Fi сети").font(.caption).foregroundStyle(.secondary) }
+                        if !model.busy { Text("Оба устройства в одной Wi-Fi сети").font(.caption).foregroundStyle(.secondary) }
                     }.padding(.horizontal,24).padding(.top,8).padding(.bottom,30).frame(maxWidth:540).frame(maxWidth:.infinity)
                 }.scrollDismissesKeyboard(.interactively)
             }
@@ -48,6 +47,19 @@ struct RelayView: View {
             .sensoryFeedback(trigger:model.installed) { _,new in new ? .success : nil }
             .fileImporter(isPresented:$picking,allowedContentTypes:[UTType(filenameExtension:"ipa") ?? .data]) { result in
                 switch result { case .success(let url): model.importIPA(url); case .failure: model.reportPickerError() }
+            }
+            .onAppear {
+                #if DEBUG
+                let args = ProcessInfo.processInfo.arguments
+                if let index = args.firstIndex(of:"--ui-preview"), args.count > index + 1 {
+                    switch args[index + 1] {
+                    case "account": account = true
+                    case "guide": help = true
+                    case "settings": settings = true
+                    default: break
+                    }
+                }
+                #endif
             }
             .sheet(isPresented:$account) { AccountSheet(model:model) }
             .sheet(isPresented:$settings) { SettingsSheet(model:model) }
@@ -65,13 +77,13 @@ struct RelayView: View {
                         if !model.fileName.isEmpty { Text(model.sizeLabel).font(.caption).foregroundStyle(.secondary) }
                     }
                     Spacer(minLength:4)
-                    if model.importing { ProgressView() } else { Image(systemName:model.fileName.isEmpty ? "plus" : "checkmark").foregroundStyle(relayTint) }
+                    if model.importing { ProgressView() } else { Image(systemName:model.fileName.isEmpty ? "plus" : "checkmark").foregroundStyle(model.fileName.isEmpty ? relayTint : .white) }
                 }.frame(minHeight:56).contentShape(Rectangle())
             }.buttonStyle(.plain).disabled(model.importing)
             divider
             HStack(spacing:14) {
                 rowIcon("wifi")
-                TextField("IP второго iPhone",text:$model.targetIP).keyboardType(.decimalPad).textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityLabel("IP второго iPhone")
+                TextField("IP целевого устройства",text:$model.targetIP).keyboardType(.decimalPad).textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityLabel("IP целевого устройства")
             }.frame(minHeight:62)
             divider
             Button { account = true } label: {
@@ -79,7 +91,7 @@ struct RelayView: View {
                     rowIcon("person.crop.circle")
                     Text(model.email.isEmpty ? "Apple Account" : model.email).lineLimit(1)
                     Spacer(minLength:4)
-                    Image(systemName:model.hasAccount ? "checkmark" : "chevron.right").font(.subheadline).foregroundStyle(model.hasAccount ? relayTint : Color.secondary)
+                    Image(systemName:model.hasAccount ? "checkmark" : "chevron.right").font(.subheadline).foregroundStyle(model.hasAccount ? Color.white : Color.secondary)
                 }.frame(minHeight:62).contentShape(Rectangle())
             }.buttonStyle(.plain)
         }
@@ -88,7 +100,7 @@ struct RelayView: View {
         VStack(spacing:22) {
             if !model.pin.isEmpty {
                 Text(model.pin).font(.system(size:46,weight:.medium,design:.monospaced)).tracking(6).minimumScaleFactor(0.55).lineLimit(1).contentTransition(.numericText()).accessibilityLabel("Код сопряжения: \(model.pin)")
-                Text("Введи на втором iPhone").font(.subheadline).foregroundStyle(.secondary)
+                Text("Введи на целевом устройстве").font(.subheadline).foregroundStyle(.secondary)
             } else if model.stage == "pairing" || model.stage == "handshake" {
                 Text("··· ···").font(.system(size:46,weight:.medium,design:.monospaced)).tracking(6).foregroundStyle(.tertiary)
                 Text(model.stage == "handshake" ? "Готовим код…" : "Код появится после подключения").font(.caption).foregroundStyle(.secondary)
@@ -129,7 +141,7 @@ struct GlassAction: View {
         } else { button.buttonStyle(.borderedProminent) }
     }
     private var button: some View {
-        Button(action:action) { Label(title,systemImage:symbol).font(.headline).frame(maxWidth:.infinity).frame(minHeight:44) }.controlSize(.large).disabled(!enabled)
+        Button(action:action) { HStack(spacing:8) { Image(systemName:symbol).foregroundStyle(.white); Text(title).foregroundStyle(prominent ? Color.white : relayTint) }.font(.headline).frame(maxWidth:.infinity).frame(minHeight:44) }.controlSize(.large).disabled(!enabled)
     }
 }
 
@@ -147,30 +159,5 @@ private struct RelayBackdrop: View {
                 Color(red:0.03,green:0.06,blue:0.12),Color(red:0.04,green:0.09,blue:0.17),Color(red:0.07,green:0.05,blue:0.16)
             ])
         }.ignoresSafeArea().overlay(.black.opacity(0.12)).ignoresSafeArea()
-    }
-}
-private struct ConnectionArt: View {
-    let active:Bool
-    let complete:Bool
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Namespace private var glass
-    var body: some View {
-        LiquidGroup {
-            HStack(spacing:26) {
-                phone(index:0)
-                Image(systemName:complete ? "checkmark" : "arrow.right").font(.system(size:22,weight:.medium)).foregroundStyle(relayTint).contentTransition(.symbolEffect(.replace)).symbolEffect(.pulse,options:.repeating,isActive:active && !reduceMotion)
-                phone(index:1)
-            }.phaseAnimator(reduceMotion ? [false] : [false,true]) { content,phase in content.offset(y:phase ? -5 : 5) } animation: { _ in .easeInOut(duration:2.8) }
-        }
-    }
-    private func phone(index:Int) -> some View {
-        let shell = RoundedRectangle(cornerRadius:20).fill(.white.opacity(index == 0 ? 0.025 : 0.065)).frame(width:77,height:137)
-            .overlay(alignment:.top) { Capsule().fill(.white.opacity(0.35)).frame(width:25,height:5).padding(.top,9) }
-            .overlay(alignment:.bottom) { Capsule().fill(.white.opacity(0.3)).frame(width:26,height:3).padding(.bottom,8) }
-            .overlay { Image(systemName:index == 0 ? "shippingbox" : complete ? "checkmark" : "app").font(.system(size:23,weight:.light)).foregroundStyle(.white.opacity(0.8)).contentTransition(.symbolEffect(.replace)) }
-        return Group {
-            if #available(iOS 26, *) { shell.glassEffect(.regular.tint(index == 0 ? .cyan.opacity(0.07) : relayTint.opacity(0.13)),in:.rect(cornerRadius:20)).glassEffectID(index,in:glass) }
-            else { shell.background(.ultraThinMaterial,in:RoundedRectangle(cornerRadius:20)) }
-        }.rotationEffect(.degrees(index == 0 ? -9 : 9)).offset(y:index == 0 ? 5 : -5)
     }
 }

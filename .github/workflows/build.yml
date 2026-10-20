@@ -31,6 +31,7 @@ jobs:
         run: |
           cargo fmt --manifest-path core/Cargo.toml --check
           cargo test --manifest-path core/Cargo.toml --locked
+          cargo test --manifest-path core/Cargo.toml --locked -p isideload siderelay_resync_regression
       - name: Compile native core for iPhone
         run: |
           export IPHONEOS_DEPLOYMENT_TARGET=18.0

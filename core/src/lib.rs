@@ -1,4 +1,5 @@
 mod archive;
+mod failure;
 mod pairing;
 mod signing;
 mod transport;
@@ -80,7 +81,7 @@ impl Session {
                 if let Some(port) = v["port"].as_u64().filter(|p| *p > 0 && *p <= 65535) { return Ok(port as u16); }
             }
             Err("Поиск устройства прекращён".into())
-        }).await.map_err(|_| "iPhone не объявил службу Remote Pairing. Проверь общую Wi-Fi сеть, разрешение «Локальная сеть» и отключи изоляцию клиентов на роутере.".to_string())?
+        }).await.map_err(|_| "Устройство не объявило службу Remote Pairing. Проверь общую Wi-Fi сеть, разрешение «Локальная сеть» и отключи изоляцию клиентов на роутере.".to_string())?
     }
 }
 
@@ -107,7 +108,7 @@ async fn run(mut config: Config, session: Arc<Session>) -> Result<(), String> {
     if !config.anisette.starts_with("https://") || config.anisette.len() > 512 {
         return Err("Anisette должен использовать HTTPS".into());
     }
-    session.progress("validating", 0.01, "Проверяем IPA на этом iPhone…");
+    session.progress("validating", 0.01, "Проверяем IPA на этом устройстве…");
     let info = archive::inspect(&config.ipa_path)?;
     let (record, peer) = transport::pair(ip, &session).await?;
     let port = session.endpoint(&peer, ip).await?;
@@ -123,21 +124,25 @@ async fn run(mut config: Config, session: Arc<Session>) -> Result<(), String> {
     let mut link = transport::Link::connect(ip, port, &record).await?;
     let (verified, _, _) = link.identity().await?;
     if verified != udid {
-        return Err("Идентичность второго iPhone изменилась. Установка остановлена.".into());
+        return Err("Идентичность целевого устройства изменилась. Установка остановлена.".into());
     }
     session.progress(
         "installing",
         0.75,
-        "Передаём подписанное приложение второму iPhone…",
+        "Передаём подписанное приложение целевому устройству…",
     );
     let progress = session.clone();
     tokio::time::timeout(std::time::Duration::from_secs(600),
         isideload::sideload::install::install_app_rsd(&mut link.handle, &mut link.handshake, &signed, move |p| {
             progress.progress("installing", 0.75 + p.min(100) as f32 * 0.0024, "Передача и установка через службы iOS…");
         })
-    ).await.map_err(|_| "iOS не подтвердил установку за 10 минут. Приложение могло установиться: проверь второй телефон перед повтором.".to_string())?
-    .map_err(|_| "iOS не подтвердил установку. Проверь Developer Mode, доверие разработчику, лимит трёх приложений и совместимость IPA.".to_string())?;
-    session.emit(json!({"type":"installed","message":"iOS подтвердил установку. На втором телефоне при необходимости доверься разработчику в настройках VPN и управления устройством.","app":info.name}));
+    ).await.map_err(|_| "iOS не подтвердил установку за 10 минут. Приложение могло установиться: проверь целевое устройство перед повтором.".to_string())?
+    .map_err(|error| {
+        let failure = failure::Failure::from_report(&error);
+        session.diagnostic(&format!("INSTALL_{}", failure.code()));
+        format!("iOS не подтвердил установку. Проверь режим разработчика, лимит активных приложений и совместимость IPA. Код: {}. После начала передачи проверь целевое устройство перед повтором.", failure.code())
+    })?;
+    session.emit(json!({"type":"installed","message":"iOS подтвердил установку. На целевом устройстве при необходимости доверься разработчику в настройках VPN и управления устройством.","app":info.name}));
     Ok(())
 }
 
@@ -215,7 +220,7 @@ pub unsafe extern "C" fn relay_start(json: *const c_char) -> u64 {
     rt.spawn(async move {
         let result = tokio::select! {
             result = run(config, session.clone()) => result,
-            _ = session.cancel.notified() => Err("Сессия отменена. Если передача уже началась, проверь результат на втором iPhone.".into()),
+            _ = session.cancel.notified() => Err("Сессия отменена. Если передача уже началась, проверь результат на целевом устройстве.".into()),
             _ = tokio::time::sleep(std::time::Duration::from_secs(1200)) => Err("20 минут истекли. Сессия закрыта.".into()),
         };
         if let Err(message) = result { session.emit(json!({"type":"error","message":message})); }

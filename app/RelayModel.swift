@@ -30,7 +30,7 @@ final class RelayModel: NSObject, @preconcurrency NetServiceDelegate, @preconcur
     private(set) var fileBytes: Int64 = 0
     private(set) var busy = false
     private(set) var importing = false
-    private(set) var message = "Выбери IPA и укажи второй iPhone."
+    private(set) var message = "Выбери IPA и укажи целевое устройство."
     private(set) var progress = 0.0
     private(set) var stage = "ready"
     private(set) var pin = ""
@@ -63,8 +63,8 @@ final class RelayModel: NSObject, @preconcurrency NetServiceDelegate, @preconcur
         if let index = ProcessInfo.processInfo.arguments.firstIndex(of: "--ui-preview"), ProcessInfo.processInfo.arguments.count > index + 1 {
             let mode = ProcessInfo.processInfo.arguments[index + 1]
             fileName = "MyApp.ipa"; fileBytes = 24_000_000; targetIP = "192.168.1.42"
-            email = "you@icloud.com"; consent = true
-            if mode == "pin" { busy = true; stage = "pairing"; pin = "482916"; message = "Введи код на втором iPhone"; progress = 0.08 }
+            email = "you@icloud.com"; consent = true; password = "preview-only"
+            if mode == "pin" { busy = true; stage = "pairing"; pin = "482916"; message = "Введи код на целевом устройстве"; progress = 0.08 }
         }
         #endif
     }
@@ -75,21 +75,21 @@ final class RelayModel: NSObject, @preconcurrency NetServiceDelegate, @preconcur
         if installed { return "Готово" }
         if !pin.isEmpty { return "Код сопряжения" }
         switch stage {
-        case "pairing": return "Ждём второй iPhone"
+        case "pairing": return "Ждём целевое устройство"
         case "handshake": return "Создаём код"
-        case "connecting": return "Проверяем iPhone"
+        case "connecting": return "Проверяем устройство"
         case "auth": return "Вход в Apple"
         case "signing": return "Подписываем"
         case "installing": return "Устанавливаем"
         case "error": return "Не получилось"
-        default: return importing ? "Импортируем IPA" : "На другой iPhone"
+        default: return importing ? "Импортируем IPA" : "На другое устройство"
         }
     }
 
     func importIPA(_ url: URL) {
         guard !busy && !importing else { return }
         importing = true
-        message = "Импортируем IPA на этот iPhone…"
+        message = "Импортируем IPA на это устройство…"
         Task {
             do {
                 let result = try await Task.detached(priority: .userInitiated) {
@@ -177,17 +177,17 @@ final class RelayModel: NSObject, @preconcurrency NetServiceDelegate, @preconcur
         note("APP_BACKGROUND")
         backgroundTask = UIApplication.shared.beginBackgroundTask(withName:"SideRelay session") { [weak self] in
             Task { @MainActor in
-                self?.cancel(reason:"iOS остановила фоновую сессию. Оставь SideRelay открытым и выбери его заново на втором iPhone.")
+                self?.cancel(reason:"iOS остановила фоновую сессию. Оставь SideRelay открытым и выбери его заново на целевом устройстве.")
                 self?.endBackground()
             }
         }
-        if backgroundTask == .invalid { cancel(reason:"Не удалось продолжить в фоне. Оставь SideRelay открытым на первом iPhone.") }
+        if backgroundTask == .invalid { cancel(reason:"Не удалось продолжить в фоне. Оставь SideRelay открытым на первом устройстве.") }
     }
     func endBackground() {
         if backgroundTask != .invalid { UIApplication.shared.endBackgroundTask(backgroundTask); backgroundTask = .invalid }
     }
     func copyDiagnostics() {
-        UIPasteboard.general.string = (["SideRelay 0.2.0", "State: \(stage)"] + diagnostics).joined(separator:"\n")
+        UIPasteboard.general.string = (["SideRelay 0.3.0", "State: \(stage)"] + diagnostics).joined(separator:"\n")
     }
     private func note(_ code: String) {
         guard code.count <= 64, code.allSatisfy({$0.isASCII && ($0.isLetter || $0.isNumber || $0 == "_")}) else { return }
@@ -222,14 +222,14 @@ final class RelayModel: NSObject, @preconcurrency NetServiceDelegate, @preconcur
             service.setTXTRecord(NetService.data(fromTXTRecord:txt))
             advertisement = service
             service.publish()
-        case "pin": pin = value["pin"] as? String ?? ""; message = "Введи код на втором iPhone"
+        case "pin": pin = value["pin"] as? String ?? ""; message = "Введи код на целевом устройстве"
         case "pin_clear": pin = ""
         case "paired":
             pin = ""
             stage = "connecting"
             advertisement?.stop()
             advertisement = nil
-            message = "Код принят. Ищем защищённую службу второго iPhone…"
+            message = "Код принят. Ищем защищённую службу целевого устройства…"
         case "browse":
             let browser = NetServiceBrowser()
             browser.delegate = self
@@ -278,7 +278,7 @@ final class RelayModel: NSObject, @preconcurrency NetServiceDelegate, @preconcur
     }
     func netService(_ sender: NetService, didNotPublish errorDict: [String:NSNumber]) {
         note("BONJOUR_PUBLISH_FAILED")
-        cancel(reason:"Разреши «Локальная сеть» для SideRelay в настройках iPhone.")
+        cancel(reason:"Разреши «Локальная сеть» для SideRelay в настройках устройства.")
     }
     func netServiceDidPublish(_ sender: NetService) { note("BONJOUR_ADVERTISED") }
     func netServiceBrowser(_ browser: NetServiceBrowser, didNotSearch errorDict: [String:NSNumber]) { note("BONJOUR_BROWSE_FAILED") }

@@ -1445,8 +1445,6 @@ checksum = "791930b43c0d5973160d90a8f3894509f2b273430f5c5c73b668636d0287c5c0"
 [[package]]
 name = "isideload"
 version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "649ccce64715f7b8f1e9eb330defc48d06d5d35eb8d13d17783533b02c67ba32"
 dependencies = [
  "aes 0.9.3",
  "aes-gcm",
@@ -2699,11 +2697,12 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
 name = "siderelay-core"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "idevice",
  "isideload",
  "plist",
+ "reqwest",
  "rootcause",
  "rustls",
  "serde",

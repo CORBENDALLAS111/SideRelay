@@ -1,6 +1,6 @@
 [package]
 name = "siderelay-core"
-version = "0.1.0"
+version = "0.3.0"
 edition = "2024"
 license = "MIT"
 
@@ -20,6 +20,7 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 zip = { version = "8.3", default-features = false, features = ["deflate"] }
 plist = "1.8"
 socket2 = "0.6"
+reqwest = { version = "0.13.2", default-features = false }
 
 [dev-dependencies]
 tempfile = "3"
@@ -27,3 +28,6 @@ tempfile = "3"
 [profile.release]
 lto = "thin"
 strip = "debuginfo"
+
+[patch.crates-io]
+isideload = { path = "vendor/isideload" }

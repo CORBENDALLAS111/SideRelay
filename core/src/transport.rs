@@ -19,9 +19,9 @@ pub fn target_address(s: &str) -> Result<IpAddr, String> {
     let ip: Ipv4Addr = s
         .trim()
         .parse()
-        .map_err(|_| "Введи IPv4 второго iPhone из настроек Wi-Fi")?;
+        .map_err(|_| "Введи IPv4 целевого устройства из настроек Wi-Fi")?;
     if !ip.is_private() || ip.octets()[3] == 0 || ip.octets()[3] == 255 {
-        return Err("Нужен локальный адрес второго iPhone (например, 192.168.1.42)".into());
+        return Err("Нужен локальный адрес целевого устройства (например, 192.168.1.42)".into());
     }
     Ok(IpAddr::V4(ip))
 }
@@ -38,24 +38,24 @@ impl Link {
         tokio::time::timeout(Duration::from_secs(40), async {
             let socket = TcpStream::connect((ip, port))
                 .await
-                .map_err(|_| "Нет соединения со вторым iPhone")?;
+                .map_err(|_| "Нет соединения со целевым устройством")?;
             let mut client = RemotePairingClient::new(RpPairingSocket::new(socket), "SideRelay");
             client
                 .attempt_pair_verify()
                 .await
-                .map_err(|_| "iPhone не начал проверку pairing")?;
+                .map_err(|_| "Устройство не начало проверку pairing")?;
             client
                 .validate_pairing(&mut record.clone())
                 .await
-                .map_err(|_| "iPhone не подтвердил ключи pairing")?;
+                .map_err(|_| "Устройство не подтвердило ключи pairing")?;
             let tunnel_port = client
                 .create_tcp_listener()
                 .await
-                .map_err(|_| "iPhone отказал в создании туннеля")?;
+                .map_err(|_| "Устройство отказало в создании туннеля")?;
             let tunnel = connect_tls_psk_tunnel_native(
                 TcpStream::connect((ip, tunnel_port))
                     .await
-                    .map_err(|_| "Туннель iPhone недоступен")?,
+                    .map_err(|_| "Туннель Устройство недоступен")?,
                 client.encryption_key(),
             )
             .await
@@ -70,7 +70,7 @@ impl Link {
                 parameters
                     .server_address
                     .parse()
-                    .map_err(|_| "Неверный адрес iPhone")?,
+                    .map_err(|_| "Неверный адрес устройства")?,
             );
             adapter.set_mss((parameters.mtu as usize).saturating_sub(60).max(536));
             let mut handle = adapter.to_async_handle();
@@ -80,39 +80,39 @@ impl Link {
                 .map_err(|_| "RSD-служба недоступна")?;
             let handshake = RsdHandshake::new(stream)
                 .await
-                .map_err(|_| "iPhone не предоставил список служб")?;
+                .map_err(|_| "Устройство не предоставило список служб")?;
             Ok(Self { handle, handshake })
         })
         .await
         .map_err(|_| {
-            "Подключение к службам второго iPhone заняло слишком много времени".to_string()
+            "Подключение к службам целевого устройства заняло слишком много времени".to_string()
         })?
     }
     pub async fn identity(&mut self) -> Result<(String, String, String), String> {
         tokio::time::timeout(Duration::from_secs(20), async {
             let mut lockdown = LockdownClient::connect_rsd(&mut self.handle, &mut self.handshake)
                 .await
-                .map_err(|_| "Служба идентификации iPhone недоступна")?;
+                .map_err(|_| "Служба идентификации Устройство недоступна")?;
             let mut values = Vec::new();
             for key in ["UniqueDeviceID", "DeviceName", "ProductVersion"] {
                 let value = lockdown
                     .get_value(Some(key), None)
                     .await
-                    .map_err(|_| "iPhone не сообщил данные устройства")?;
+                    .map_err(|_| "Устройство не сообщило данные устройства")?;
                 values.push(
                     value
                         .as_string()
-                        .ok_or("Неверный ответ iPhone")?
+                        .ok_or("Неверный ответ устройства")?
                         .to_string(),
                 );
             }
             if values[0].len() < 24 {
-                return Err("Неверный UDID iPhone".into());
+                return Err("Неверный UDID устройства".into());
             }
             Ok((values.remove(0), values.remove(0), values.remove(0)))
         })
         .await
-        .map_err(|_| "iPhone не ответил на запрос идентификации".to_string())?
+        .map_err(|_| "Устройство не ответило на запрос идентификации".to_string())?
     }
 }
 

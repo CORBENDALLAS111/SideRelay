@@ -24,17 +24,17 @@ struct ChallengeView: View {
             ScrollView {
                 VStack(alignment:.leading,spacing:22) {
                     if challenge.kind == "device" {
-                        Text("Это нужный iPhone?").font(.title.bold())
-                        Text(challenge.data["name"] as? String ?? "iPhone").font(.title2)
+                        Text("Это нужное устройство?").font(.title.bold())
+                        Text(challenge.data["name"] as? String ?? "Устройство").font(.title2)
                         Text("iOS \(challenge.data["version"] as? String ?? "—")")
                         Text("UDID: \(challenge.data["udid"] as? String ?? "—")").font(.caption.monospaced()).textSelection(.enabled)
                         Text("Установить: \(challenge.data["app"] as? String ?? "IPA")").font(.headline)
                         primary("Подписать и установить") { model.answer("confirm") }
                     } else if challenge.kind == "two_factor" {
                         Text("Подтверди вход в Apple").font(.title.bold())
-                        Text("Введи код с доверенного устройства или из SMS.").foregroundStyle(.secondary)
+                        Text(challenge.data["hint"] as? String ?? "Введи код с доверенного устройства или из SMS.").foregroundStyle(.secondary)
                         TextField("Код подтверждения",text:$code).keyboardType(.numberPad).textContentType(.oneTimeCode).font(.title.monospaced()).textFieldStyle(.roundedBorder)
-                        primary("Отправить код") { model.answer("code", value:code); code = "" }.disabled(code.count < 4)
+                        primary("Отправить код") { model.answer("code", value:code); code = "" }.disabled(code.count < 4 || challenge.data["unknown"] as? Bool == true)
                         Button("Отправить код на доверенные устройства") { model.answer("devices") }
                         ForEach(numbers) { number in Button("SMS: \(number.name)") { model.answer("sms",value:Int(number.id) ?? 0) } }
                         Button("Повторить отправку") { model.answer("resend") }
@@ -50,7 +50,7 @@ struct ChallengeView: View {
                         Text("Команда разработчика").font(.title.bold())
                         ForEach(challenge.choices) { choice in primary(choice.name) { model.answer("select",value:choice.id) } }
                     }
-                    Button("Отменить установку",role:.cancel) { model.answer("abort") }.frame(maxWidth:.infinity)
+                    Button("Отменить установку",role:.cancel) { model.cancel(reason:"Установка отменена.") }.frame(maxWidth:.infinity)
                 }.padding(24)
             }.navigationTitle("SideRelay").navigationBarTitleDisplayMode(.inline)
             .tint(relayAccent)
@@ -67,6 +67,6 @@ struct ChallengeView: View {
         }
     }
     private func primary(_ title:String,action:@escaping ()->Void) -> some View {
-        Button(action:action) { Text(title).frame(maxWidth:.infinity).padding(.vertical,6) }.buttonStyle(.borderedProminent).foregroundStyle(.black).controlSize(.large)
+        Button(action:action) { Text(title).frame(maxWidth:.infinity).padding(.vertical,6) }.buttonStyle(.borderedProminent).foregroundStyle(.white).controlSize(.large)
     }
 }

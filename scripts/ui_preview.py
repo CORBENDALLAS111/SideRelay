@@ -30,7 +30,7 @@ try:
     run('xcrun','simctl','bootstatus',device,'-b')
     run('xcrun','simctl','status_bar',device,'override','--time','9:41','--batteryState','charged','--batteryLevel','100')
     run('xcrun','simctl','install',device,'build/Preview/Build/Products/Debug-iphonesimulator/SideRelay.app')
-    for mode in ['home','pin']:
+    for mode in ['home','pin','account','guide','settings']:
         subprocess.run(['xcrun','simctl','terminate',device,'io.github.corbendallas111.SideRelay'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         run('xcrun','simctl','launch',device,'io.github.corbendallas111.SideRelay','--ui-preview',mode)
         time.sleep(3)

@@ -114,17 +114,17 @@ pub async fn pair(ip: IpAddr, session: &Session) -> Result<(RpPairingFile, PeerD
         .map_err(|_| "Не удалось получить порт")?
         .port();
     session.emit(json!({"type":"advertise","name":record.identifier(),"port":port,"txt":info.mdns_txt_records(record.identifier())}));
-    session.progress("pairing", 0.05, "Выбери SideRelay на втором iPhone");
+    session.progress("pairing", 0.05, "Выбери SideRelay на целевом устройстве");
     tokio::time::timeout(Duration::from_secs(240), async {
         loop {
             let (socket, address) = listener.accept().await.map_err(|_| "Ошибка приёма соединения")?;
             if !eligible_peer(ip, address.ip()) {
                 session.diagnostic("PAIR_ADDRESS_MISMATCH");
-                session.progress("pairing", 0.05, "Проверь IP второго iPhone");
+                session.progress("pairing", 0.05, "Проверь IP целевого устройства");
                 continue;
             }
             session.diagnostic(if address.is_ipv6() { "PAIR_TCP_IPV6" } else { "PAIR_TCP_IPV4" });
-            session.progress("handshake", 0.07, "iPhone подключён. Создаём код…");
+            session.progress("handshake", 0.07, "Устройство подключено. Создаём код…");
             let pin_ready = Notify::new();
             let mut host = PairableHost::new(ObservedSocket { socket: RpPairingSocket::new_device(socket), session }, info.clone());
             let pin_signal = &pin_ready;
@@ -153,7 +153,7 @@ pub async fn pair(ip: IpAddr, session: &Session) -> Result<(RpPairingFile, PeerD
                 None => session.diagnostic("PAIR_HANDSHAKE_TIMEOUT"),
             }
             session.emit(json!({"type":"pin_clear"}));
-            session.progress("pairing", 0.05, "Выбери SideRelay ещё раз на втором iPhone");
+            session.progress("pairing", 0.05, "Выбери SideRelay ещё раз на целевом устройстве");
         }
     }).await.map_err(|_| "Код не получен. Проверь IP и локальную сеть. В настройках выбери SideRelay заново; подробности — в диагностике.".to_string())?
     .map(|peer| (record, peer))
