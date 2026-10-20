@@ -19,7 +19,7 @@ pub fn target_address(s: &str) -> Result<IpAddr, String> {
     let ip: Ipv4Addr = s
         .trim()
         .parse()
-        .map_err(|_| "Введи IPv4 целевого устройства из настроек Wi-Fi")?;
+        .map_err(|_| "Введи IPv4 целевого устройства из настроек сети")?;
     if !ip.is_private() || ip.octets()[3] == 0 || ip.octets()[3] == 255 {
         return Err("Нужен локальный адрес целевого устройства (например, 192.168.1.42)".into());
     }
@@ -38,7 +38,7 @@ impl Link {
         tokio::time::timeout(Duration::from_secs(40), async {
             let socket = TcpStream::connect((ip, port))
                 .await
-                .map_err(|_| "Нет соединения со целевым устройством")?;
+                .map_err(|_| "Нет соединения с целевым устройством")?;
             let mut client = RemotePairingClient::new(RpPairingSocket::new(socket), "SideRelay");
             client
                 .attempt_pair_verify()
@@ -55,7 +55,7 @@ impl Link {
             let tunnel = connect_tls_psk_tunnel_native(
                 TcpStream::connect((ip, tunnel_port))
                     .await
-                    .map_err(|_| "Туннель Устройство недоступен")?,
+                    .map_err(|_| "Туннель устройства недоступен")?,
                 client.encryption_key(),
             )
             .await
@@ -92,7 +92,7 @@ impl Link {
         tokio::time::timeout(Duration::from_secs(20), async {
             let mut lockdown = LockdownClient::connect_rsd(&mut self.handle, &mut self.handshake)
                 .await
-                .map_err(|_| "Служба идентификации Устройство недоступна")?;
+                .map_err(|_| "Служба идентификации устройства недоступна")?;
             let mut values = Vec::new();
             for key in ["UniqueDeviceID", "DeviceName", "ProductVersion"] {
                 let value = lockdown

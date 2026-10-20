@@ -1,8 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-let relayTint = Color(red:0.52,green:0.91,blue:0.86)
-
 struct RelayView: View {
     @Bindable var model:RelayModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -10,6 +8,9 @@ struct RelayView: View {
     @State private var account = false
     @State private var settings = false
     @State private var help = false
+    @State private var retryPending = false
+    @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding = false
+    @ScaledMetric(relativeTo:.largeTitle) private var pinFontSize: CGFloat = 46
     @Namespace private var glass
     var body: some View {
         NavigationStack {
@@ -17,8 +18,9 @@ struct RelayView: View {
                 RelayBackdrop()
                 ScrollView {
                     VStack(spacing:24) {
+                        if model.installed { InstallationSuccess().accessibilityHidden(true) }
                         VStack(spacing:7) {
-                            Text(model.statusTitle).font(.system(size:30,weight:.semibold,design:.rounded)).multilineTextAlignment(.center)
+                            Text(model.statusTitle).font(.title.weight(.semibold)).multilineTextAlignment(.center).accessibilityAddTraits(.isHeader)
                             if model.busy && model.pin.isEmpty {
                                 Text(model.message).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
                             }
@@ -26,13 +28,21 @@ struct RelayView: View {
                         LiquidGroup {
                             GlassPanel(id:"session",namespace:glass) { if model.busy { liveSession } else { setup } }
                         }
-                        if model.stage == "error" {
+                        if model.stage == .error {
                             Text(model.message).font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
                             Button("Диагностика") { settings = true }.font(.footnote)
                         }
-                        if model.busy { GlassAction(title:"Отменить",symbol:"xmark",prominent:false) { model.cancel() } }
-                        else { GlassAction(title:"Установить",symbol:"arrow.up.right",enabled:model.canStart) { model.start() } }
-                        if !model.busy { Text("Оба устройства в одной Wi-Fi сети").font(.caption).foregroundStyle(.secondary) }
+                        if model.busy {
+                            GlassAction(title:"Отменить",symbol:"xmark",prominent:false,hint:"Остановить текущую сессию установки") { model.cancel() }
+                        } else if model.stage == .error {
+                            GlassAction(title:"Повторить",symbol:"arrow.clockwise",enabled:!model.importing,hint:"Снова выбрать IPA и ввести пароль для новой попытки") {
+                                retryPending = true
+                                if !model.prepareRetry() { picking = true }
+                            }
+                        } else {
+                            GlassAction(title:"Установить",symbol:"arrow.up.right",enabled:model.canStart,hint:"Начать сопряжение, подпись и установку на целевое устройство") { model.start() }
+                        }
+                        if !model.busy { Text("Оба устройства в одной локальной сети").font(.caption).foregroundStyle(.secondary) }
                     }.padding(.horizontal,24).padding(.top,8).padding(.bottom,30).frame(maxWidth:540).frame(maxWidth:.infinity)
                 }.scrollDismissesKeyboard(.interactively)
             }
@@ -45,8 +55,15 @@ struct RelayView: View {
             .animation(reduceMotion ? nil : .spring(response:0.45,dampingFraction:0.82),value:model.pin)
             .sensoryFeedback(.selection,trigger:model.pin)
             .sensoryFeedback(trigger:model.installed) { _,new in new ? .success : nil }
+            .sensoryFeedback(trigger:model.stage) { _,new in new == .error ? .error : nil }
+            .onChange(of:model.importing) { _,loading in
+                if !loading && retryPending && model.stage != .error && !model.fileName.isEmpty {
+                    retryPending = false
+                    account = true
+                }
+            }
             .fileImporter(isPresented:$picking,allowedContentTypes:[UTType(filenameExtension:"ipa") ?? .data]) { result in
-                switch result { case .success(let url): model.importIPA(url); case .failure: model.reportPickerError() }
+                switch result { case .success(let url): model.importIPA(url); case .failure: retryPending = false; model.reportPickerError() }
             }
             .onAppear {
                 #if DEBUG
@@ -58,14 +75,19 @@ struct RelayView: View {
                     case "settings": settings = true
                     default: break
                     }
+                    return
                 }
                 #endif
+                if !hasSeenOnboarding { help = true }
             }
             .sheet(isPresented:$account) { AccountSheet(model:model) }
             .sheet(isPresented:$settings) { SettingsSheet(model:model) }
-            .sheet(isPresented:$help) { ConnectionHelp() }
+            .sheet(isPresented:$help,onDismiss:{ hasSeenOnboarding = true }) { ConnectionHelp() }
             .sheet(item:$model.challenge) { challenge in ChallengeView(model:model,challenge:challenge).interactiveDismissDisabled() }
         }
+        #if DEBUG
+        .modifier(RelayPreviewType())
+        #endif
     }
     private var setup: some View {
         VStack(spacing:0) {
@@ -80,6 +102,10 @@ struct RelayView: View {
                     if model.importing { ProgressView() } else { Image(systemName:model.fileName.isEmpty ? "plus" : "checkmark").foregroundStyle(model.fileName.isEmpty ? relayTint : .white) }
                 }.frame(minHeight:56).contentShape(Rectangle())
             }.buttonStyle(.plain).disabled(model.importing)
+                .accessibilityElement(children:.ignore)
+                .accessibilityLabel("Файл IPA")
+                .accessibilityValue(model.fileName.isEmpty ? "Не выбран" : "\(model.fileName), \(model.sizeLabel)")
+                .accessibilityHint("Открывает выбор файла приложения")
             divider
             HStack(spacing:14) {
                 rowIcon("wifi")
@@ -94,18 +120,22 @@ struct RelayView: View {
                     Image(systemName:model.hasAccount ? "checkmark" : "chevron.right").font(.subheadline).foregroundStyle(model.hasAccount ? Color.white : Color.secondary)
                 }.frame(minHeight:62).contentShape(Rectangle())
             }.buttonStyle(.plain)
+                .accessibilityElement(children:.ignore)
+                .accessibilityLabel("Apple Account")
+                .accessibilityValue(model.hasAccount ? "Данные готовы к подписи" : "Нужны данные для подписи")
+                .accessibilityHint("Открывает данные аккаунта и разрешение подписи")
         }
     }
     private var liveSession: some View {
         VStack(spacing:22) {
             if !model.pin.isEmpty {
-                Text(model.pin).font(.system(size:46,weight:.medium,design:.monospaced)).tracking(6).minimumScaleFactor(0.55).lineLimit(1).contentTransition(.numericText()).accessibilityLabel("Код сопряжения: \(model.pin)")
+                Text(model.pin).font(.system(size:pinFontSize,weight:.medium,design:.monospaced)).tracking(6).minimumScaleFactor(0.55).lineLimit(1).contentTransition(.numericText()).accessibilityLabel("Код сопряжения").accessibilityValue(model.pin.map(String.init).joined(separator:" "))
                 Text("Введи на целевом устройстве").font(.subheadline).foregroundStyle(.secondary)
-            } else if model.stage == "pairing" || model.stage == "handshake" {
-                Text("··· ···").font(.system(size:46,weight:.medium,design:.monospaced)).tracking(6).foregroundStyle(.tertiary)
-                Text(model.stage == "handshake" ? "Готовим код…" : "Код появится после подключения").font(.caption).foregroundStyle(.secondary)
+            } else if model.stage == .pairing || model.stage == .handshake {
+                Text("··· ···").font(.system(size:pinFontSize,weight:.medium,design:.monospaced)).tracking(6).foregroundStyle(.tertiary)
+                Text(model.stage == .handshake ? "Готовим код…" : "Код появится после подключения").font(.caption).foregroundStyle(.secondary)
             } else {
-                ProgressView(value:model.progress).tint(relayTint)
+                ProgressView(value:model.progress).tint(relayTint).accessibilityLabel("Ход установки").accessibilityValue(Text(model.progress,format:.percent.precision(.fractionLength(0))))
                 Text(model.progress,format:.percent.precision(.fractionLength(0))).font(.system(.title2,design:.rounded).monospacedDigit()).contentTransition(.numericText())
             }
         }.frame(maxWidth:.infinity).padding(.vertical,8)
@@ -142,6 +172,8 @@ struct GlassAction: View {
     let symbol:String
     var prominent = true
     var enabled = true
+    var hint = ""
+    @State private var activation = false
     let action:()->Void
     var body: some View {
         if #available(iOS 26, *) {
@@ -154,7 +186,7 @@ struct GlassAction: View {
         } else { button.buttonStyle(.borderedProminent) }
     }
     private var button: some View {
-        Button(action:action) { HStack(spacing:8) { Image(systemName:symbol).foregroundStyle(.white); Text(title).foregroundStyle(prominent ? Color.white : relayTint) }.font(.headline).frame(maxWidth:.infinity).frame(minHeight:44) }.controlSize(.large).disabled(!enabled)
+        Button { activation.toggle(); action() } label: { HStack(spacing:8) { Image(systemName:symbol).foregroundStyle(.white); Text(title).foregroundStyle(prominent ? Color.white : relayTint) }.font(.headline).frame(maxWidth:.infinity).frame(minHeight:44) }.controlSize(.large).disabled(!enabled).accessibilityHint(hint).sensoryFeedback(.selection,trigger:activation)
     }
 }
 
@@ -174,3 +206,28 @@ private struct RelayBackdrop: View {
         }.ignoresSafeArea()
     }
 }
+
+private struct InstallationSuccess: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ScaledMetric(relativeTo:.largeTitle) private var size: CGFloat = 68
+    @State private var appeared = false
+    var body: some View {
+        Image(systemName:"checkmark.circle.fill")
+            .symbolRenderingMode(.palette).foregroundStyle(.white,relayTint.opacity(0.35))
+            .font(.system(size:size,weight:.light))
+            .scaleEffect(appeared ? 1 : 0.65).opacity(appeared ? 1 : 0)
+            .symbolEffect(.bounce,value:reduceMotion ? false : appeared)
+            .onAppear { withAnimation(reduceMotion ? nil : .spring(response:0.5,dampingFraction:0.6)) { appeared = true } }
+    }
+}
+
+#if DEBUG
+private struct RelayPreviewType: ViewModifier {
+    @ViewBuilder func body(content: Content) -> some View {
+        let args = ProcessInfo.processInfo.arguments
+        if let index = args.firstIndex(of:"--ui-preview"), args.count > index + 1, args[index + 1] == "large" {
+            content.dynamicTypeSize(.accessibility5)
+        } else { content }
+    }
+}
+#endif

@@ -32,13 +32,15 @@ final class RelayModel: NSObject, @preconcurrency NetServiceDelegate, @preconcur
     private(set) var importing = false
     private(set) var message = "Выбери IPA и укажи целевое устройство."
     private(set) var progress = 0.0
-    private(set) var stage = "ready"
+    private(set) var stage: RelayStage = .ready
     private(set) var pin = ""
     private(set) var installed = false
     private(set) var diagnostics: [String] = []
     var challenge: RelayChallenge?
 
     @ObservationIgnored private var ipa: URL?
+    // Only the original file-picker reference, in memory. Never retain the temporary IPA or password.
+    @ObservationIgnored private var retrySource: URL?
     @ObservationIgnored private var session: UInt64 = 0
     @ObservationIgnored private var polling: Task<Void, Never>?
     @ObservationIgnored private var advertisement: NetService?
@@ -64,7 +66,9 @@ final class RelayModel: NSObject, @preconcurrency NetServiceDelegate, @preconcur
             let mode = ProcessInfo.processInfo.arguments[index + 1]
             fileName = "MyApp.ipa"; fileBytes = 24_000_000; targetIP = "192.168.1.42"
             email = "you@icloud.com"; consent = true; password = "preview-only"
-            if mode == "pin" { busy = true; stage = "pairing"; pin = "482916"; message = "Введи код на целевом устройстве"; progress = 0.08 }
+            if mode == "pin" || mode == "large" { busy = true; stage = .pairing; pin = "482916"; message = "Введи код на целевом устройстве"; progress = 0.08 }
+            if mode == "success" { installed = true; stage = .installed; progress = 1; message = "Установка подтверждена iOS." }
+            if mode == "error" { stage = .error; fileName = ""; fileBytes = 0; password = ""; message = "Вход Apple не завершён. Проверь аккаунт и повтори попытку. Код: HTTP_503." }
         }
         #endif
     }
@@ -75,19 +79,22 @@ final class RelayModel: NSObject, @preconcurrency NetServiceDelegate, @preconcur
         if installed { return "Готово" }
         if !pin.isEmpty { return "Код сопряжения" }
         switch stage {
-        case "pairing": return "Ждём целевое устройство"
-        case "handshake": return "Создаём код"
-        case "connecting": return "Проверяем устройство"
-        case "auth": return "Вход в Apple"
-        case "signing": return "Подписываем"
-        case "installing": return "Устанавливаем"
-        case "error": return "Не получилось"
-        default: return importing ? "Импортируем IPA" : "На другое устройство"
+        case .pairing: return "Ждём целевое устройство"
+        case .handshake: return "Создаём код"
+        case .connecting: return "Проверяем устройство"
+        case .auth: return "Вход в Apple"
+        case .signing: return "Подписываем"
+        case .installing: return "Устанавливаем"
+        case .error: return "Не получилось"
+        case .validating: return "Проверяем IPA"
+        case .installed: return "Готово"
+        case .ready: return importing ? "Импортируем IPA" : "На другое устройство"
         }
     }
 
     func importIPA(_ url: URL) {
         guard !busy && !importing else { return }
+        retrySource = url
         importing = true
         message = "Импортируем IPA на это устройство…"
         Task {
@@ -125,8 +132,11 @@ final class RelayModel: NSObject, @preconcurrency NetServiceDelegate, @preconcur
                 fileName = url.lastPathComponent
                 fileBytes = result.1
                 installed = false
+                stage = .ready
                 message = "IPA готов. Сопряжение начнётся после нажатия кнопки."
             } catch {
+                retrySource = nil
+                stage = .error
                 message = "Не удалось импортировать IPA. Нужен доступный файл .ipa размером до 128 МБ. Для файла в iCloud дождись загрузки."
             }
             importing = false
@@ -134,13 +144,26 @@ final class RelayModel: NSObject, @preconcurrency NetServiceDelegate, @preconcur
     }
     private enum ImportError: Error { case invalid, size }
 
+    /// A retry imports a fresh temporary copy; the previous session has already deleted its own files.
+    @discardableResult
+    func prepareRetry() -> Bool {
+        guard !busy && !importing else { return false }
+        stage = .ready
+        installed = false
+        progress = 0
+        password = ""
+        guard let source = retrySource else { return false }
+        importIPA(source)
+        return true
+    }
+
     func start() {
         guard canStart, let ipa else { return }
         let values: [String: Any] = ["target_ip":targetIP.trimmingCharacters(in: .whitespacesAndNewlines), "ipa_path":ipa.path, "email":email.trimmingCharacters(in: .whitespacesAndNewlines), "password":password, "anisette":anisette.trimmingCharacters(in: .whitespacesAndNewlines)]
         guard let data = try? JSONSerialization.data(withJSONObject: values), let json = String(data: data, encoding: .utf8) else { return }
         session = json.withCString { relay_start($0) }
         password = ""
-        guard session != 0 else { message = "Не удалось создать сессию. Заверши предыдущую операцию и попробуй снова."; return }
+        guard session != 0 else { stage = .error; message = "Не удалось создать сессию. Заверши предыдущую операцию и попробуй снова."; return }
         busy = true
         diagnostics = []
         cancellationReason = nil
@@ -148,7 +171,7 @@ final class RelayModel: NSObject, @preconcurrency NetServiceDelegate, @preconcur
         installed = false
         pin = ""
         progress = 0
-        stage = "pairing"
+        stage = .pairing
         UIApplication.shared.isIdleTimerDisabled = true
         polling = Task { [weak self] in
             while !Task.isCancelled {
@@ -187,7 +210,7 @@ final class RelayModel: NSObject, @preconcurrency NetServiceDelegate, @preconcur
         if backgroundTask != .invalid { UIApplication.shared.endBackgroundTask(backgroundTask); backgroundTask = .invalid }
     }
     func copyDiagnostics() {
-        UIPasteboard.general.string = (["SideRelay 0.3.1", "State: \(stage)"] + diagnostics).joined(separator:"\n")
+        UIPasteboard.general.string = (["SideRelay \(RelayBuild.version)", "State: \(stage.rawValue)"] + diagnostics).joined(separator:"\n")
     }
     private func note(_ code: String) {
         guard code.count <= 64, code.allSatisfy({$0.isASCII && ($0.isLetter || $0.isNumber || $0 == "_")}) else { return }
@@ -211,7 +234,10 @@ final class RelayModel: NSObject, @preconcurrency NetServiceDelegate, @preconcur
         case "progress":
             progress = value["progress"] as? Double ?? progress
             message = value["message"] as? String ?? message
-            stage = value["stage"] as? String ?? stage
+            if let rawStage = value["stage"] as? String {
+                if let decoded = RelayStage(rawValue:rawStage) { stage = decoded }
+                else { note("UNKNOWN_STAGE") }
+            }
         case "advertise":
             guard let port = value["port"] as? Int, let name = value["name"] as? String, let pairs = value["txt"] as? [[String]] else { return }
             var txt: [String:Data] = [:]
@@ -226,7 +252,7 @@ final class RelayModel: NSObject, @preconcurrency NetServiceDelegate, @preconcur
         case "pin_clear": pin = ""
         case "paired":
             pin = ""
-            stage = "connecting"
+            stage = .connecting
             advertisement?.stop()
             advertisement = nil
             message = "Код принят. Ищем защищённую службу целевого устройства…"
@@ -242,11 +268,11 @@ final class RelayModel: NSObject, @preconcurrency NetServiceDelegate, @preconcur
         case "installed":
             installed = true
             progress = 1
-            stage = "installed"
+            stage = .installed
             message = value["message"] as? String ?? "Установка подтверждена iOS."
         case "error":
             installed = false
-            stage = "error"
+            stage = .error
             message = cancellationReason ?? (value["message"] as? String ?? "Операция не завершена.")
         case "finished": finish()
         default: break
@@ -266,6 +292,7 @@ final class RelayModel: NSObject, @preconcurrency NetServiceDelegate, @preconcur
         // Rust deletes this copy and its extracted bundle, including on cancellation.
         // A crash is handled by the narrowly scoped startup cleanup.
         ipa = nil
+        if installed { retrySource = nil }
         fileName = ""
         fileBytes = 0
         UIApplication.shared.isIdleTimerDisabled = false

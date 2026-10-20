@@ -30,11 +30,11 @@ try:
     run('xcrun','simctl','bootstatus',device,'-b')
     run('xcrun','simctl','status_bar',device,'override','--time','9:41','--batteryState','charged','--batteryLevel','100')
     run('xcrun','simctl','install',device,'build/Preview/Build/Products/Debug-iphonesimulator/SideRelay.app')
-    for mode in ['home','pin','account','guide','settings']:
+    for mode in ['home','pin','account','guide','settings','error','success','large']:
         subprocess.run(['xcrun','simctl','terminate',device,'io.github.corbendallas111.SideRelay'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         run('xcrun','simctl','launch',device,'io.github.corbendallas111.SideRelay','--ui-preview',mode)
         time.sleep(3)
         run('xcrun','simctl','io',device,'screenshot',str(output/(mode+'.png')))
 finally:
     subprocess.run(['xcrun','simctl','shutdown',device],check=False)
-print('Rendered home and PIN screens using the UI-only simulator stub')
+print('Rendered home, PIN, account, guide, settings, error, success and maximum Dynamic Type with the UI-only simulator stub')

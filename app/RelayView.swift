@@ -1,7 +1,5 @@
 import SwiftUI
 
-private let relayAccent = Color(red:0.52,green:0.91,blue:0.86)
-
 struct LicenseView: View {
     var body: some View {
         ScrollView {
@@ -53,7 +51,7 @@ struct ChallengeView: View {
                     Button("Отменить установку",role:.cancel) { model.cancel(reason:"Установка отменена.") }.frame(maxWidth:.infinity)
                 }.padding(24)
             }.navigationTitle("SideRelay").navigationBarTitleDisplayMode(.inline)
-            .tint(relayAccent)
+            .tint(relayTint)
             .confirmationDialog("Отозвать сертификат? Подписанные им приложения могут перестать открываться.",isPresented:Binding(get:{pendingCertificate != nil},set:{if !$0 { pendingCertificate = nil }}),titleVisibility:.visible) {
                 if let choice = pendingCertificate { Button("Отозвать и продолжить",role:.destructive) { model.answer("revoke",value:choice.id); pendingCertificate = nil } }
                 Button("Назад",role:.cancel) { pendingCertificate = nil }

@@ -21,6 +21,7 @@ jobs:
         run: |
           rustup update stable --no-self-update
           rustup default stable
+          rustup component add clippy
           rustup target add aarch64-apple-ios
           brew install xcodegen
           xcodebuild -version
@@ -29,7 +30,9 @@ jobs:
           workspaces: core
       - name: Test core and validate formatting
         run: |
+          python3 scripts/check_versions.py
           cargo fmt --manifest-path core/Cargo.toml --check
+          cargo clippy --manifest-path core/Cargo.toml --locked --all-targets -- -D warnings
           cargo test --manifest-path core/Cargo.toml --locked
           cargo test --manifest-path core/Cargo.toml --locked -p isideload siderelay_resync_regression
       - name: Compile native core for iPhone
