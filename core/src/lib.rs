@@ -1,4 +1,5 @@
 mod archive;
+mod pairing;
 mod signing;
 mod transport;
 
@@ -33,6 +34,9 @@ pub struct Session {
     cancel: Notify,
 }
 impl Session {
+    pub fn diagnostic(&self, code: &str) {
+        self.emit(json!({"type":"diagnostic","code":code}));
+    }
     pub fn emit(&self, value: Value) {
         let mut queue = self.events.lock().unwrap();
         // Coalesce high-frequency progress; never discard a challenge or terminal event.

@@ -3,18 +3,17 @@ use idevice::{
     RsdService,
     lockdown::LockdownClient,
     remote_pairing::{
-        PairableHost, PairableHostInfo, PeerDevice, RemotePairingClient, RpPairingFile,
-        RpPairingSocket, connect_tls_psk_tunnel_native,
+        PeerDevice, RemotePairingClient, RpPairingFile, RpPairingSocket,
+        connect_tls_psk_tunnel_native,
     },
     rsd::RsdHandshake,
     tcp::{adapter::Adapter, handle::AdapterHandle},
 };
-use serde_json::json;
 use std::{
     net::{IpAddr, Ipv4Addr},
     time::Duration,
 };
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::TcpStream;
 
 pub fn target_address(s: &str) -> Result<IpAddr, String> {
     let ip: Ipv4Addr = s
@@ -27,37 +26,7 @@ pub fn target_address(s: &str) -> Result<IpAddr, String> {
     Ok(IpAddr::V4(ip))
 }
 pub async fn pair(ip: IpAddr, session: &Session) -> Result<(RpPairingFile, PeerDevice), String> {
-    let identity = format!("SideRelay-{}", uuid::Uuid::new_v4());
-    let mut record = RpPairingFile::generate(&identity);
-    let info = PairableHostInfo::generate("SideRelay", "Mac17,7");
-    let listener = TcpListener::bind((Ipv4Addr::UNSPECIFIED, 0))
-        .await
-        .map_err(|_| "Не удалось открыть локальный порт")?;
-    let port = listener
-        .local_addr()
-        .map_err(|_| "Не удалось получить порт")?
-        .port();
-    session.emit(json!({"type":"advertise","name":record.identifier(),"port":port,"txt":info.mdns_txt_records(record.identifier())}));
-    session.progress("pairing", 0.05, "На втором iPhone: Настройки → Конфиденциальность и безопасность → Режим разработчика → Сопряжение с SideRelay. Требуется iOS 27.");
-    let (socket, _) = tokio::time::timeout(Duration::from_secs(240), async {
-        loop {
-            let (s, addr) = listener.accept().await?;
-            if addr.ip() == ip { return Ok::<_, std::io::Error>((s, addr)); }
-        }
-    }).await.map_err(|_| "Второй iPhone не подключился за 4 минуты. Проверь его IP, iOS 27, Developer Mode и общую Wi-Fi сеть.".to_string())?
-    .map_err(|_| "Не удалось принять соединение второго iPhone")?;
-    let mut host = PairableHost::new(RpPairingSocket::new_device(socket), info);
-    let peer = tokio::time::timeout(
-        Duration::from_secs(180),
-        host.accept(&mut record, |pin| async move {
-            session.emit(json!({"type":"pin","pin":pin}));
-        }),
-    )
-    .await
-    .map_err(|_| "Время ввода кода сопряжения истекло".to_string())?
-    .map_err(|_| "Сопряжение отклонено. Разблокируй второй iPhone и повтори ввод кода.")?;
-    session.emit(json!({"type":"paired"}));
-    Ok((record, peer))
+    crate::pairing::pair(ip, session).await
 }
 
 pub struct Link {
