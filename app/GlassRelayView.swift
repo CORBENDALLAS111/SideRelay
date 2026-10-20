@@ -125,8 +125,16 @@ private struct GlassPanel<Content:View>: View {
     let namespace:Namespace.ID
     @ViewBuilder let content:Content
     var body: some View {
-        if #available(iOS 26, *) { content.padding(20).glassEffect(.regular,in:.rect(cornerRadius:28)).glassEffectID(id,in:namespace) }
-        else { content.padding(20).background(.ultraThinMaterial,in:RoundedRectangle(cornerRadius:28)) }
+        if #available(iOS 26, *) {
+            surface.glassEffect(.regular.tint(.white.opacity(0.12)),in:.rect(cornerRadius:28)).glassEffectID(id,in:namespace)
+        } else {
+            surface.background(.ultraThinMaterial,in:RoundedRectangle(cornerRadius:28))
+        }
+    }
+    private var surface: some View {
+        content.padding(20)
+            .background(LinearGradient(colors:[.white.opacity(0.14),.white.opacity(0.06)],startPoint:.topLeading,endPoint:.bottomTrailing),in:RoundedRectangle(cornerRadius:28))
+            .overlay { RoundedRectangle(cornerRadius:28).strokeBorder(.white.opacity(0.16),lineWidth:0.75).allowsHitTesting(false) }
     }
 }
 struct GlassAction: View {
@@ -137,7 +145,12 @@ struct GlassAction: View {
     let action:()->Void
     var body: some View {
         if #available(iOS 26, *) {
-            if prominent { button.buttonStyle(.glassProminent) } else { button.buttonStyle(.glass) }
+            if prominent { button.buttonStyle(.glassProminent) }
+            else {
+                button.buttonStyle(.plain).padding(.vertical,12)
+                    .background(LinearGradient(colors:[.white.opacity(0.12),.white.opacity(0.05)],startPoint:.topLeading,endPoint:.bottomTrailing),in:Capsule())
+                    .glassEffect(.regular.tint(.white.opacity(0.12)).interactive(),in:.capsule)
+            }
         } else { button.buttonStyle(.borderedProminent) }
     }
     private var button: some View {
@@ -154,10 +167,10 @@ private struct RelayBackdrop: View {
             MeshGradient(width:3,height:3,points:[
                 [0,0],[0.5,0],[1,0],[0,0.5],[Float(0.5 + sin(t)*0.14),Float(0.5 + cos(t)*0.15)],[1,0.5],[0,1],[0.5,1],[1,1]
             ],colors:[
-                Color(red:0.025,green:0.06,blue:0.13),Color(red:0.07,green:0.14,blue:0.25),Color(red:0.03,green:0.09,blue:0.16),
-                Color(red:0.05,green:0.17,blue:0.23),Color(red:0.09,green:0.27,blue:0.30),Color(red:0.10,green:0.11,blue:0.27),
+                Color(red:0.035,green:0.10,blue:0.17),Color(red:0.10,green:0.25,blue:0.34),Color(red:0.12,green:0.13,blue:0.27),
+                Color(red:0.07,green:0.24,blue:0.29),Color(red:0.12,green:0.34,blue:0.36),Color(red:0.17,green:0.17,blue:0.34),
                 Color(red:0.03,green:0.06,blue:0.12),Color(red:0.04,green:0.09,blue:0.17),Color(red:0.07,green:0.05,blue:0.16)
             ])
-        }.ignoresSafeArea().overlay(.black.opacity(0.12)).ignoresSafeArea()
+        }.ignoresSafeArea()
     }
 }

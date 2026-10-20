@@ -57,7 +57,7 @@ struct SettingsSheet: View {
                 Section {
                     NavigationLink("Лицензии") { LicenseView() }
                     Link("GitHub",destination:URL(string:"https://github.com/CORBENDALLAS111/SideRelay")!)
-                } footer: { Text("SideRelay 0.3.0 · экспериментальная версия") }
+                } footer: { Text("SideRelay 0.3.1 · экспериментальная версия") }
             }.navigationTitle("Настройки").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement:.confirmationAction) { Button("Готово") { dismiss() } } }.tint(relayTint)
         }

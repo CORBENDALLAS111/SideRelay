@@ -187,7 +187,7 @@ final class RelayModel: NSObject, @preconcurrency NetServiceDelegate, @preconcur
         if backgroundTask != .invalid { UIApplication.shared.endBackgroundTask(backgroundTask); backgroundTask = .invalid }
     }
     func copyDiagnostics() {
-        UIPasteboard.general.string = (["SideRelay 0.3.0", "State: \(stage)"] + diagnostics).joined(separator:"\n")
+        UIPasteboard.general.string = (["SideRelay 0.3.1", "State: \(stage)"] + diagnostics).joined(separator:"\n")
     }
     private func note(_ code: String) {
         guard code.count <= 64, code.allSatisfy({$0.isASCII && ($0.isLetter || $0.isNumber || $0 == "_")}) else { return }
