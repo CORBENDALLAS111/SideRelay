@@ -35,6 +35,7 @@ final class RelayModel: NSObject, @preconcurrency NetServiceDelegate, @preconcur
     private(set) var stage = "ready"
     private(set) var pin = ""
     private(set) var installed = false
+    private(set) var diagnostics: [String] = []
     var challenge: RelayChallenge?
 
     @ObservationIgnored private var ipa: URL?
@@ -43,6 +44,8 @@ final class RelayModel: NSObject, @preconcurrency NetServiceDelegate, @preconcur
     @ObservationIgnored private var advertisement: NetService?
     @ObservationIgnored private var browser: NetServiceBrowser?
     @ObservationIgnored private var services: [NetService] = []
+    @ObservationIgnored private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
+    @ObservationIgnored private var cancellationReason: String?
 
     override init() {
         super.init()
@@ -56,9 +59,31 @@ final class RelayModel: NSObject, @preconcurrency NetServiceDelegate, @preconcur
                 try? FileManager.default.removeItem(at: path)
             }
         }
+        #if DEBUG
+        if let index = ProcessInfo.processInfo.arguments.firstIndex(of: "--ui-preview"), ProcessInfo.processInfo.arguments.count > index + 1 {
+            let mode = ProcessInfo.processInfo.arguments[index + 1]
+            fileName = "MyApp.ipa"; fileBytes = 24_000_000; targetIP = "192.168.1.42"
+            email = "you@icloud.com"; consent = true
+            if mode == "pin" { busy = true; stage = "pairing"; pin = "482916"; message = "Введи код на втором iPhone"; progress = 0.08 }
+        }
+        #endif
     }
     var canStart: Bool { ipa != nil && !busy && !importing && !targetIP.isEmpty && !email.isEmpty && !password.isEmpty && consent }
     var sizeLabel: String { ByteCountFormatter.string(fromByteCount: fileBytes, countStyle: .file) }
+    var hasAccount: Bool { !email.isEmpty && !password.isEmpty && consent }
+    var statusTitle: String {
+        if installed { return "Готово" }
+        if !pin.isEmpty { return "Код сопряжения" }
+        switch stage {
+        case "pairing": return "Ждём второй iPhone"
+        case "handshake": return "Создаём код"
+        case "auth": return "Вход в Apple"
+        case "signing": return "Подписываем"
+        case "installing": return "Устанавливаем"
+        case "error": return "Не получилось"
+        default: return importing ? "Импортируем IPA" : "На другой iPhone"
+        }
+    }
 
     func importIPA(_ url: URL) {
         guard !busy && !importing else { return }
@@ -116,6 +141,9 @@ final class RelayModel: NSObject, @preconcurrency NetServiceDelegate, @preconcur
         password = ""
         guard session != 0 else { message = "Не удалось создать сессию. Заверши предыдущую операцию и попробуй снова."; return }
         busy = true
+        diagnostics = []
+        cancellationReason = nil
+        note("SESSION_START")
         installed = false
         pin = ""
         progress = 0
@@ -134,13 +162,37 @@ final class RelayModel: NSObject, @preconcurrency NetServiceDelegate, @preconcur
             }
         }
     }
-    func cancel() {
+    func cancel(reason: String? = nil) {
         guard session != 0 else { return }
+        cancellationReason = reason
         stopNetworking()
         challenge = nil
         pin = ""
         message = "Закрываем сессию…"
         relay_cancel(session)
+    }
+    func enterBackground() {
+        guard busy, backgroundTask == .invalid else { return }
+        note("APP_BACKGROUND")
+        backgroundTask = UIApplication.shared.beginBackgroundTask(withName:"SideRelay session") { [weak self] in
+            Task { @MainActor in
+                self?.cancel(reason:"iOS остановила фоновую сессию. Оставь SideRelay открытым и выбери его заново на втором iPhone.")
+                self?.endBackground()
+            }
+        }
+        if backgroundTask == .invalid { cancel(reason:"Не удалось продолжить в фоне. Оставь SideRelay открытым на первом iPhone.") }
+    }
+    func endBackground() {
+        if backgroundTask != .invalid { UIApplication.shared.endBackgroundTask(backgroundTask); backgroundTask = .invalid }
+    }
+    func copyDiagnostics() {
+        UIPasteboard.general.string = (["SideRelay 0.2.0", "State: \(stage)"] + diagnostics).joined(separator:"\n")
+    }
+    private func note(_ code: String) {
+        guard code.count <= 64, code.allSatisfy({$0.isASCII && ($0.isLetter || $0.isNumber || $0 == "_")}) else { return }
+        let time = Date().formatted(date:.omitted,time:.standard)
+        diagnostics.append("\(time)  \(code)")
+        if diagnostics.count > 40 { diagnostics.removeFirst(diagnostics.count - 40) }
     }
     func answer(_ action: String, value: Any = "") {
         guard let challenge else { return }
@@ -154,6 +206,7 @@ final class RelayModel: NSObject, @preconcurrency NetServiceDelegate, @preconcur
     }
     private func receive(_ value: [String: Any]) {
         switch value["type"] as? String {
+        case "diagnostic": note(value["code"] as? String ?? "")
         case "progress":
             progress = value["progress"] as? Double ?? progress
             message = value["message"] as? String ?? message
@@ -168,7 +221,8 @@ final class RelayModel: NSObject, @preconcurrency NetServiceDelegate, @preconcur
             service.setTXTRecord(NetService.data(fromTXTRecord:txt))
             advertisement = service
             service.publish()
-        case "pin": pin = value["pin"] as? String ?? ""
+        case "pin": pin = value["pin"] as? String ?? ""; message = "Введи код на втором iPhone"
+        case "pin_clear": pin = ""
         case "paired":
             pin = ""
             advertisement?.stop()
@@ -191,12 +245,13 @@ final class RelayModel: NSObject, @preconcurrency NetServiceDelegate, @preconcur
         case "error":
             installed = false
             stage = "error"
-            message = value["message"] as? String ?? "Операция не завершена."
+            message = cancellationReason ?? (value["message"] as? String ?? "Операция не завершена.")
         case "finished": finish()
         default: break
         }
     }
     private func finish() {
+        endBackground()
         stopNetworking()
         relay_release(session)
         session = 0
@@ -220,9 +275,11 @@ final class RelayModel: NSObject, @preconcurrency NetServiceDelegate, @preconcur
         services.removeAll()
     }
     func netService(_ sender: NetService, didNotPublish errorDict: [String:NSNumber]) {
-        message = "Не удалось объявить SideRelay в сети. Разреши «Локальная сеть» для SideRelay и проверь Wi-Fi."
-        relay_cancel(session)
+        note("BONJOUR_PUBLISH_FAILED")
+        cancel(reason:"Разреши «Локальная сеть» для SideRelay в настройках iPhone.")
     }
+    func netServiceDidPublish(_ sender: NetService) { note("BONJOUR_ADVERTISED") }
+    func netServiceBrowser(_ browser: NetServiceBrowser, didNotSearch errorDict: [String:NSNumber]) { note("BONJOUR_BROWSE_FAILED") }
     func netServiceBrowser(_ browser: NetServiceBrowser, didFind service: NetService, moreComing: Bool) {
         service.delegate = self
         services.append(service)

@@ -10,7 +10,8 @@ struct SideRelayApp: App {
             RelayView(model: model)
                 .preferredColorScheme(.dark)
                 .onChange(of: phase) { _, value in
-                    if value == .background && model.busy { model.cancel() }
+                    if value == .background { model.enterBackground() }
+                    if value == .active { model.endBackground() }
                 }
         }
     }

@@ -193,4 +193,74 @@ mod tests {
         let (v6, _) = listener.accept().await.unwrap();
         drop(v6);
     }
+    #[tokio::test]
+    async fn probe_socket_does_not_block_pin_on_next_connection() {
+        use std::sync::{Arc, Mutex};
+        use tokio::sync::mpsc;
+        let (sender, receiver) = mpsc::unbounded_channel();
+        let session = Arc::new(Session {
+            events: Mutex::default(),
+            sender,
+            input: tokio::sync::Mutex::new(receiver),
+            cancel: Notify::new(),
+        });
+        let worker = session.clone();
+        let task = tokio::spawn(async move { pair("127.0.0.1".parse().unwrap(), &worker).await });
+        let port = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let port = session
+                    .events
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .find(|v| v["type"] == "advertise")
+                    .and_then(|v| v["port"].as_u64());
+                if let Some(port) = port {
+                    break port as u16;
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap();
+        // A discovery probe connects, then closes before the protocol starts.
+        let probe = TcpStream::connect((Ipv4Addr::LOCALHOST, port))
+            .await
+            .unwrap();
+        drop(probe);
+        let stream = TcpStream::connect((Ipv4Addr::LOCALHOST, port))
+            .await
+            .unwrap();
+        let mut client = RpPairingSocket::new(stream);
+        client.send_plain(json!({"request":{"_0":{"handshake":{"_0":{"hostOptions":{"attemptPairVerify":false}}}}}}),0).await.unwrap();
+        let response = tokio::time::timeout(Duration::from_secs(5), client.recv_plain())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(response.as_dictionary().unwrap().contains_key("response"));
+        let m1 = RpPairingSocket::<TcpStream>::serialize_bytes(&[6, 1, 1]);
+        client.send_plain(json!({"event":{"_0":{"pairingData":{"_0":{"data":m1,"kind":"setupManualPairing","startNewSession":true}}}}}),1).await.unwrap();
+        let pin = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let pin = session
+                    .events
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .find(|v| v["type"] == "pin")
+                    .and_then(|v| v["pin"].as_str())
+                    .map(str::to_string);
+                if let Some(pin) = pin {
+                    break pin;
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(pin.len(), 6);
+        assert!(pin.bytes().all(|b| b.is_ascii_digit()));
+        task.abort();
+        let _ = task.await;
+    }
 }
