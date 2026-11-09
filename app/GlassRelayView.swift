@@ -201,7 +201,7 @@ struct GlassAction: View {
         } else { button.buttonStyle(.borderedProminent).tint(Color(white:symbol == "checkmark" ? 0.26 : 0.83)) }
     }
     private var button: some View {
-        Button { activation.toggle(); action() } label: { HStack(spacing:8) { Image(systemName:symbol).foregroundStyle(prominent && symbol != "checkmark" ? Color.black : .white); Text(title).foregroundStyle(prominent && symbol != "checkmark" ? Color.black : relayTint) }.font(.headline).frame(maxWidth:.infinity).frame(minHeight:44) }.controlSize(.large).disabled(!enabled).accessibilityHint(hint).sensoryFeedback(.selection,trigger:activation)
+        Button { activation.toggle(); action() } label: { HStack(spacing:8) { Image(systemName:symbol).foregroundStyle(enabled && prominent && symbol != "checkmark" ? Color.black : .white); Text(title).foregroundStyle(enabled && prominent && symbol != "checkmark" ? Color.black : relayTint) }.font(.headline).frame(maxWidth:.infinity).frame(minHeight:44) }.controlSize(.large).disabled(!enabled).accessibilityHint(hint).sensoryFeedback(.selection,trigger:activation)
     }
 }
 
