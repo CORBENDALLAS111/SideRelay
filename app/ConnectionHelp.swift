@@ -6,7 +6,7 @@ struct ConnectionHelp: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var step = 0
-    @State private var ethernet = false
+    @AppStorage("setupConnection") private var connection = "wifi"
 
     private let titles = ["Соедини устройства", "Подготовь устройство", "Добавь приложение", "Подтверди установку"]
     private let icons = ["network", "gearshape", "shippingbox", "checkmark.shield"]
@@ -35,7 +35,11 @@ struct ConnectionHelp: View {
             .toolbar { ToolbarItem(placement:.cancellationAction) { Button(L("Закрыть")) { dismiss() } } }
             .tint(relayTint)
             #if DEBUG
-            .onAppear { if ProcessInfo.processInfo.arguments.contains("ethernet") { ethernet = true } }
+            .onAppear {
+                let args = ProcessInfo.processInfo.arguments
+                if args.contains("ethernet") { connection = "ethernet" }
+                if args.contains("hotspot") { connection = "hotspot" }
+            }
             #endif
         }.presentationDetents([.large])
     }
@@ -71,12 +75,13 @@ struct ConnectionHelp: View {
         case 0:
             Text(L("На первом устройстве открыт SideRelay. На целевом устанавливается приложение."))
                 .foregroundStyle(.secondary)
-            Picker(L("Соединение"),selection:$ethernet) {
-                Text("Wi-Fi").tag(false)
-                Text("Ethernet").tag(true)
+            Picker(L("Соединение"),selection:$connection) {
+                Text("Wi-Fi").tag("wifi")
+                Text(L("Модем")).tag("hotspot")
+                Text("Ethernet").tag("ethernet")
             }.pickerStyle(.segmented)
             VStack(alignment:.leading,spacing:12) {
-                if ethernet {
+                if connection == "ethernet" {
                     Text(L("Подключи оба устройства Ethernet-адаптерами к одной сети. Wi-Fi можно выключить. Для входа в Apple первому устройству нужен интернет."))
                     EthernetStatus()
                     DisclosureGroup(L("Два адаптера и кабель без роутера")) {
@@ -90,18 +95,23 @@ struct ConnectionHelp: View {
                     }
                     Text(L("Ethernet не проверен на физических устройствах. Прямой USB-C между устройствами не поддерживается."))
                         .font(.footnote).foregroundStyle(.secondary)
+                } else if connection == "hotspot" {
+                    row("1", "Включи режим модема", "На первом устройстве включи сотовые данные. Открой «Настройки → Режим модема» и включи «Разрешать другим». Не закрывай этот экран до подключения второго устройства.")
+                    row("2", "Подключи целевое устройство", "На целевом открой «Настройки → Wi-Fi» и выбери сеть первого устройства. Нажми ⓘ рядом с сетью и запиши IPv4 целевого устройства. Вернись в SideRelay на первом устройстве.")
+                    Text(L("Роутер не нужен. IPA передаётся по локальной сети модема. Сотовые данные нужны для входа и подписи Apple. Если SideRelay не появляется в режиме разработчика, этот модем может не пропускать обнаружение устройств."))
+                        .font(.footnote).foregroundStyle(.secondary)
                 } else {
                     Text(L("Подключи оба устройства к одной Wi-Fi сети. Если устройства не видят друг друга, попробуй обычную сеть вместо гостевой или точки доступа."))
                 }
             }.frame(maxWidth:.infinity,alignment:.leading).padding(16)
                 .background(.white.opacity(0.08),in:RoundedRectangle(cornerRadius:20))
-                .animation(reduceMotion ? nil : .smooth(duration:0.28),value:ethernet)
+                .animation(reduceMotion ? nil : .smooth(duration:0.28),value:connection)
             Text(L("Разреши SideRelay доступ к локальной сети, когда система попросит.")).font(.subheadline).foregroundStyle(.secondary)
         case 1:
             row("1", "Включи режим разработчика", "На целевом устройстве нужна iOS / iPadOS 27 с доступным сопряжением. Открой «Настройки → Конфиденциальность и безопасность → Режим разработчика». Если потребуется, перезагрузи устройство и подтверди включение.")
             row("2", "Найди адрес", "На целевом открой сведения о текущей сети в «Wi-Fi» или «Ethernet». Запиши IPv4, например 192.168.1.42. Адреса 169.254.x.x не подходят.")
         case 2:
-            row("1", "Выбери IPA", "На первом устройстве выбери доступный файл .ipa до 128 МБ. Если он в iCloud, дождись загрузки. Введи IPv4 целевого устройства.")
+            row("1", "Выбрать IPA", "На первом устройстве выбери доступный файл .ipa до 128 МБ. Если он в iCloud, дождись загрузки. Введи IPv4 целевого устройства.")
             row("2", "Введи Apple Account", "Открой Apple Account, введи обычный пароль и разреши подпись. Пароль приложения не подходит. SideRelay запросит пароль снова при повторе.")
             row("3", "Нажми «Установить»", "Оставь SideRelay открытым и первое устройство разблокированным.")
         default:

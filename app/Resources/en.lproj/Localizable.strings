@@ -222,3 +222,9 @@
 "Ethernet пока не обнаружен" = "Ethernet not detected yet";
 "Проверяем Ethernet…" = "Checking Ethernet…";
 "Использовать адрес 192.168.50.2" = "Use address 192.168.50.2";
+"Модем" = "Hotspot";
+"Включи режим модема" = "Turn on Personal Hotspot";
+"На первом устройстве включи сотовые данные. Открой «Настройки → Режим модема» и включи «Разрешать другим». Не закрывай этот экран до подключения второго устройства." = "On the first device, turn on cellular data. Open Settings → Personal Hotspot and turn on Allow Others to Join. Stay on this screen until the other device connects.";
+"Подключи целевое устройство" = "Connect the target device";
+"На целевом открой «Настройки → Wi-Fi» и выбери сеть первого устройства. Нажми ⓘ рядом с сетью и запиши IPv4 целевого устройства. Вернись в SideRelay на первом устройстве." = "On the target, open Settings → Wi-Fi and join the first device's network. Tap ⓘ next to the network and note the target's IPv4 address. Return to SideRelay on the first device.";
+"Роутер не нужен. IPA передаётся по локальной сети модема. Сотовые данные нужны для входа и подписи Apple. Если SideRelay не появляется в режиме разработчика, этот модем может не пропускать обнаружение устройств." = "No router is required. The IPA transfers over the hotspot's local network. Apple sign-in and signing need cellular data. If SideRelay does not appear in Developer Mode, the hotspot may not allow device discovery.";

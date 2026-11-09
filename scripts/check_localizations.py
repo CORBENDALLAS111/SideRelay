@@ -15,7 +15,11 @@ for key, value in catalog["en"].items():
     assert value and key.count("%@") == value.count("%@"), key
     assert not re.search(r"[А-Яа-яЁё]",value), key
 for path in Path("app").glob("*.swift"):
-    for key in re.findall(r'\bL\("([^"\n]+)"',path.read_text(encoding="utf-8-sig")):
+    source = path.read_text(encoding="utf-8-sig")
+    keys = re.findall(r'\bL\("([^"\n]+)"',source)
+    if path.name != "RelayText.swift":
+        keys.extend(re.findall(r'"([^"\n]*[А-Яа-яЁё][^"\n]*)"',source))
+    for key in keys:
         assert key in catalog["en"], f"{path}: missing {key}"
 for path in Path("core/src").glob("*.rs"):
     source = path.read_text(encoding="utf-8").split("#[cfg(test)]",1)[0]

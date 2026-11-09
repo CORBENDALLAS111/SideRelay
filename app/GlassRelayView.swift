@@ -84,7 +84,7 @@ struct RelayView: View {
                 if let index = args.firstIndex(of:"--ui-preview"), args.count > index + 1 {
                     switch args[index + 1] {
                     case "account": account = true
-                    case "guide", "ethernet": help = true
+                    case "guide", "ethernet", "hotspot": help = true
                     case "settings": settings = true
                     default: break
                     }
