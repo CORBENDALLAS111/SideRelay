@@ -31,6 +31,7 @@ jobs:
       - name: Test core and validate formatting
         run: |
           python3 scripts/check_versions.py
+          python3 scripts/check_localizations.py
           cargo fmt --manifest-path core/Cargo.toml --check
           cargo clippy --manifest-path core/Cargo.toml --locked --all-targets -- -D warnings
           cargo test --manifest-path core/Cargo.toml --locked

@@ -10,6 +10,10 @@ if not app.is_dir():
     raise SystemExit("Device app bundle is missing")
 with (app / "Info.plist").open("rb") as stream:
     info = plistlib.load(stream)
+for language in ("ru", "en"):
+    for resource in ("Localizable.strings", "InfoPlist.strings"):
+        if not (app / f"{language}.lproj" / resource).is_file():
+            raise SystemExit(f"Missing bundled localization: {language}/{resource}")
 executable = app / info["CFBundleExecutable"]
 if not executable.is_file() or executable.read_bytes()[:4] != b"\xcf\xfa\xed\xfe":
     raise SystemExit("Missing arm64 Mach-O executable")

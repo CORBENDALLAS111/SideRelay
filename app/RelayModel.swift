@@ -30,7 +30,7 @@ final class RelayModel: NSObject, @preconcurrency NetServiceDelegate, @preconcur
     private(set) var fileBytes: Int64 = 0
     private(set) var busy = false
     private(set) var importing = false
-    private(set) var message = "Выбери IPA и укажи целевое устройство."
+    private(set) var message = L("Выбери IPA и укажи целевое устройство.")
     private(set) var progress = 0.0
     private(set) var stage: RelayStage = .ready
     private(set) var pin = ""
@@ -66,9 +66,9 @@ final class RelayModel: NSObject, @preconcurrency NetServiceDelegate, @preconcur
             let mode = ProcessInfo.processInfo.arguments[index + 1]
             fileName = "MyApp.ipa"; fileBytes = 24_000_000; targetIP = "192.168.1.42"
             email = "you@icloud.com"; consent = true; password = "preview-only"
-            if mode == "pin" || mode == "large" { busy = true; stage = .pairing; pin = "482916"; message = "Введи код на целевом устройстве"; progress = 0.08 }
-            if mode == "success" { installed = true; stage = .installed; progress = 1; message = "Установка подтверждена iOS." }
-            if mode == "error" { stage = .error; fileName = ""; fileBytes = 0; password = ""; message = "Вход Apple не завершён. Проверь аккаунт и повтори попытку. Код: HTTP_503." }
+            if mode == "pin" || mode == "large" { busy = true; stage = .pairing; pin = "482916"; message = L("Введи код на целевом устройстве"); progress = 0.08 }
+            if mode == "success" { installed = true; stage = .installed; progress = 1; message = L("Установка подтверждена iOS.") }
+            if mode == "error" { stage = .error; fileName = ""; fileBytes = 0; password = ""; message = L("Вход Apple не завершён. Проверь аккаунт и повтори попытку. Код: HTTP_503.") }
         }
         #endif
     }
@@ -76,19 +76,19 @@ final class RelayModel: NSObject, @preconcurrency NetServiceDelegate, @preconcur
     var sizeLabel: String { ByteCountFormatter.string(fromByteCount: fileBytes, countStyle: .file) }
     var hasAccount: Bool { !email.isEmpty && !password.isEmpty && consent }
     var statusTitle: String {
-        if installed { return "Готово" }
-        if !pin.isEmpty { return "Код сопряжения" }
+        if installed { return L("Готово") }
+        if !pin.isEmpty { return L("Код сопряжения") }
         switch stage {
-        case .pairing: return "Ждём целевое устройство"
-        case .handshake: return "Создаём код"
-        case .connecting: return "Проверяем устройство"
-        case .auth: return "Вход в Apple"
-        case .signing: return "Подписываем"
-        case .installing: return "Устанавливаем"
-        case .error: return "Не получилось"
-        case .validating: return "Проверяем IPA"
-        case .installed: return "Готово"
-        case .ready: return importing ? "Импортируем IPA" : "На другое устройство"
+        case .pairing: return L("Ждём целевое устройство")
+        case .handshake: return L("Создаём код")
+        case .connecting: return L("Проверяем устройство")
+        case .auth: return L("Вход в Apple")
+        case .signing: return L("Подписываем")
+        case .installing: return L("Устанавливаем")
+        case .error: return L("Не получилось")
+        case .validating: return L("Проверяем IPA")
+        case .installed: return L("Готово")
+        case .ready: return importing ? L("Импортируем IPA") : L("На другое устройство")
         }
     }
 
@@ -96,7 +96,7 @@ final class RelayModel: NSObject, @preconcurrency NetServiceDelegate, @preconcur
         guard !busy && !importing else { return }
         retrySource = url
         importing = true
-        message = "Импортируем IPA на это устройство…"
+        message = L("Импортируем IPA на это устройство…")
         Task {
             do {
                 let result = try await Task.detached(priority: .userInitiated) {
@@ -133,11 +133,11 @@ final class RelayModel: NSObject, @preconcurrency NetServiceDelegate, @preconcur
                 fileBytes = result.1
                 installed = false
                 stage = .ready
-                message = "IPA готов. Сопряжение начнётся после нажатия кнопки."
+                message = L("IPA готов. Сопряжение начнётся после нажатия кнопки.")
             } catch {
                 retrySource = nil
                 stage = .error
-                message = "Не удалось импортировать IPA. Нужен доступный файл .ipa размером до 128 МБ. Для файла в iCloud дождись загрузки."
+                message = L("Не удалось импортировать IPA. Нужен доступный файл .ipa размером до 128 МБ. Для файла в iCloud дождись загрузки.")
             }
             importing = false
         }
@@ -163,7 +163,7 @@ final class RelayModel: NSObject, @preconcurrency NetServiceDelegate, @preconcur
         guard let data = try? JSONSerialization.data(withJSONObject: values), let json = String(data: data, encoding: .utf8) else { return }
         session = json.withCString { relay_start($0) }
         password = ""
-        guard session != 0 else { stage = .error; message = "Не удалось создать сессию. Заверши предыдущую операцию и попробуй снова."; return }
+        guard session != 0 else { stage = .error; message = L("Не удалось создать сессию. Заверши предыдущую операцию и попробуй снова."); return }
         busy = true
         diagnostics = []
         cancellationReason = nil
@@ -192,7 +192,7 @@ final class RelayModel: NSObject, @preconcurrency NetServiceDelegate, @preconcur
         stopNetworking()
         challenge = nil
         pin = ""
-        message = "Закрываем сессию…"
+        message = L("Закрываем сессию…")
         relay_cancel(session)
     }
     func enterBackground() {
@@ -200,11 +200,11 @@ final class RelayModel: NSObject, @preconcurrency NetServiceDelegate, @preconcur
         note("APP_BACKGROUND")
         backgroundTask = UIApplication.shared.beginBackgroundTask(withName:"SideRelay session") { [weak self] in
             Task { @MainActor in
-                self?.cancel(reason:"iOS остановила фоновую сессию. Оставь SideRelay открытым и выбери его заново на целевом устройстве.")
+                self?.cancel(reason:L("iOS остановила фоновую сессию. Оставь SideRelay открытым и выбери его заново на целевом устройстве."))
                 self?.endBackground()
             }
         }
-        if backgroundTask == .invalid { cancel(reason:"Не удалось продолжить в фоне. Оставь SideRelay открытым на первом устройстве.") }
+        if backgroundTask == .invalid { cancel(reason:L("Не удалось продолжить в фоне. Оставь SideRelay открытым на первом устройстве.")) }
     }
     func endBackground() {
         if backgroundTask != .invalid { UIApplication.shared.endBackgroundTask(backgroundTask); backgroundTask = .invalid }
@@ -223,7 +223,7 @@ final class RelayModel: NSObject, @preconcurrency NetServiceDelegate, @preconcur
         send(["token":challenge.id,"action":action,"value":value])
         self.challenge = nil
     }
-    func reportPickerError() { message = "Файл не выбран или недоступен. Попробуй открыть его из «Файлов»." }
+    func reportPickerError() { message = L("Файл не выбран или недоступен. Попробуй открыть его из «Файлов».") }
     private func send(_ object: [String: Any]) {
         guard session != 0, let data = try? JSONSerialization.data(withJSONObject: object), let json = String(data:data, encoding:.utf8) else { return }
         json.withCString { relay_reply(session, $0) }
@@ -233,7 +233,7 @@ final class RelayModel: NSObject, @preconcurrency NetServiceDelegate, @preconcur
         case "diagnostic": note(value["code"] as? String ?? "")
         case "progress":
             progress = value["progress"] as? Double ?? progress
-            message = value["message"] as? String ?? message
+            message = (value["message"] as? String).map(RelayText.core) ?? message
             if let rawStage = value["stage"] as? String {
                 if let decoded = RelayStage(rawValue:rawStage) { stage = decoded }
                 else { note("UNKNOWN_STAGE") }
@@ -248,14 +248,14 @@ final class RelayModel: NSObject, @preconcurrency NetServiceDelegate, @preconcur
             service.setTXTRecord(NetService.data(fromTXTRecord:txt))
             advertisement = service
             service.publish()
-        case "pin": pin = value["pin"] as? String ?? ""; message = "Введи код на целевом устройстве"
+        case "pin": pin = value["pin"] as? String ?? ""; message = L("Введи код на целевом устройстве")
         case "pin_clear": pin = ""
         case "paired":
             pin = ""
             stage = .connecting
             advertisement?.stop()
             advertisement = nil
-            message = "Код принят. Ищем защищённую службу целевого устройства…"
+            message = L("Код принят. Ищем защищённую службу целевого устройства…")
         case "browse":
             let browser = NetServiceBrowser()
             browser.delegate = self
@@ -264,16 +264,16 @@ final class RelayModel: NSObject, @preconcurrency NetServiceDelegate, @preconcur
         case "challenge":
             guard let token = value["token"] as? String, let kind = value["kind"] as? String else { return }
             challenge = RelayChallenge(id:token, kind:kind, data:value["data"] as? [String:Any] ?? [:])
-            if kind == "two_factor" { message = "Apple запросил подтверждение входа." }
+            if kind == "two_factor" { message = L("Apple запросил подтверждение входа.") }
         case "installed":
             installed = true
             progress = 1
             stage = .installed
-            message = value["message"] as? String ?? "Установка подтверждена iOS."
+            message = (value["message"] as? String).map(RelayText.core) ?? L("Установка подтверждена iOS.")
         case "error":
             installed = false
             stage = .error
-            message = cancellationReason ?? (value["message"] as? String ?? "Операция не завершена.")
+            message = cancellationReason ?? ((value["message"] as? String).map(RelayText.core) ?? L("Операция не завершена."))
         case "finished": finish()
         default: break
         }
@@ -305,7 +305,7 @@ final class RelayModel: NSObject, @preconcurrency NetServiceDelegate, @preconcur
     }
     func netService(_ sender: NetService, didNotPublish errorDict: [String:NSNumber]) {
         note("BONJOUR_PUBLISH_FAILED")
-        cancel(reason:"Разреши «Локальная сеть» для SideRelay в настройках устройства.")
+        cancel(reason:L("Разреши «Локальная сеть» для SideRelay в настройках устройства."))
     }
     func netServiceDidPublish(_ sender: NetService) { note("BONJOUR_ADVERTISED") }
     func netServiceBrowser(_ browser: NetServiceBrowser, didNotSearch errorDict: [String:NSNumber]) { note("BONJOUR_BROWSE_FAILED") }

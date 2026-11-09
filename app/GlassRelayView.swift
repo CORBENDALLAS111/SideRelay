@@ -18,10 +18,16 @@ struct RelayView: View {
             ZStack {
                 RelayBackdrop()
                 ScrollView {
-                    VStack(spacing:24) {
+                    VStack(spacing:22) {
                         if model.installed { InstallationSuccess().accessibilityHidden(true) }
-                        VStack(spacing:7) {
-                            Text(model.statusTitle).font(.title.weight(.semibold)).multilineTextAlignment(.center).accessibilityAddTraits(.isHeader)
+                        VStack(spacing:9) {
+                            if !model.busy && !model.installed && model.stage != .error {
+                                Label(L("Локальная установка"), systemImage:"link")
+                                    .font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                                    .padding(.horizontal,12).padding(.vertical,7)
+                                    .background(.white.opacity(0.08),in:Capsule())
+                            }
+                            Text(model.statusTitle).font(.title.weight(.semibold)).multilineTextAlignment(.center).contentTransition(.opacity).accessibilityAddTraits(.isHeader)
                             if model.busy && model.pin.isEmpty {
                                 Text(model.message).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
                             }
@@ -31,29 +37,35 @@ struct RelayView: View {
                         }
                         if model.stage == .error {
                             Text(model.message).font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
-                            Button("Диагностика") { settings = true }.font(.footnote)
+                            Button(L("Диагностика")) { settings = true }.font(.footnote)
                         }
                         if model.busy {
-                            GlassAction(title:"Отменить",symbol:"xmark",prominent:false,hint:"Остановить текущую сессию установки") { model.cancel() }
+                            GlassAction(title:L("Отменить"),symbol:"xmark",prominent:false,hint:L("Остановить текущую сессию установки")) { model.cancel() }
                         } else if model.stage == .error {
-                            GlassAction(title:"Повторить",symbol:"arrow.clockwise",enabled:!model.importing,hint:"Снова выбрать IPA и ввести пароль для новой попытки") {
+                            GlassAction(title:L("Повторить"),symbol:"arrow.clockwise",enabled:!model.importing,hint:L("Снова выбрать IPA и ввести пароль для новой попытки")) {
                                 retryPending = true
                                 if !model.prepareRetry() { picking = true }
                             }
                         } else {
-                            GlassAction(title:"Установить",symbol:"arrow.up.right",enabled:model.canStart,hint:"Начать сопряжение, подпись и установку на целевое устройство") { model.start() }
+                            GlassAction(title:L("Установить"),symbol:"arrow.up.right",enabled:model.canStart,hint:L("Начать сопряжение, подпись и установку на целевое устройство")) { model.start() }
                         }
-                        if !model.busy { Text("Оба устройства в одной локальной сети").font(.caption).foregroundStyle(.secondary) }
-                    }.padding(.horizontal,24).padding(.top,8).padding(.bottom,30).frame(maxWidth:540).frame(maxWidth:.infinity)
+                        if !model.busy {
+                            Button { help = true } label: {
+                                Label(L("Гайд по настройке"),systemImage:"list.number")
+                                    .font(.subheadline.weight(.medium)).padding(.vertical,10)
+                            }.buttonStyle(.plain)
+                        }
+                    }.padding(.horizontal,24).padding(.top,26).padding(.bottom,34).frame(maxWidth:540).frame(maxWidth:.infinity)
                 }.scrollDismissesKeyboard(.interactively)
             }
             .navigationTitle("SideRelay").navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement:.topBarLeading) { Button { help = true } label: { Image(systemName:"questionmark") }.accessibilityLabel("Подключение") }
-                ToolbarItem(placement:.topBarTrailing) { Button { settings = true } label: { Image(systemName:"slider.horizontal.3") }.accessibilityLabel("Настройки") }
+                ToolbarItem(placement:.topBarLeading) { Button { help = true } label: { Image(systemName:"questionmark") }.accessibilityLabel(L("Подключение")) }
+                ToolbarItem(placement:.topBarTrailing) { Button { settings = true } label: { Image(systemName:"slider.horizontal.3") }.accessibilityLabel(L("Настройки")) }
             }.tint(relayTint)
-            .animation(reduceMotion ? nil : .spring(response:0.5,dampingFraction:0.83),value:model.busy)
-            .animation(reduceMotion ? nil : .spring(response:0.45,dampingFraction:0.82),value:model.pin)
+            .animation(reduceMotion ? nil : .smooth(duration:0.38),value:model.busy)
+            .animation(reduceMotion ? nil : .easeInOut(duration:0.24),value:model.stage)
+            .animation(reduceMotion ? nil : .smooth(duration:0.32),value:model.pin)
             .sensoryFeedback(.selection,trigger:model.pin)
             .sensoryFeedback(trigger:model.installed) { _,new in new ? .success : nil }
             .sensoryFeedback(trigger:model.stage) { _,new in new == .error ? .error : nil }
@@ -72,7 +84,7 @@ struct RelayView: View {
                 if let index = args.firstIndex(of:"--ui-preview"), args.count > index + 1 {
                     switch args[index + 1] {
                     case "account": account = true
-                    case "guide": help = true
+                    case "guide", "ethernet": help = true
                     case "settings": settings = true
                     default: break
                     }
@@ -83,7 +95,7 @@ struct RelayView: View {
             }
             .sheet(isPresented:$account) { AccountSheet(model:model) }
             .sheet(isPresented:$settings) { SettingsSheet(model:model) }
-            .sheet(isPresented:$help,onDismiss:{ hasSeenOnboarding = true }) { ConnectionHelp() }
+            .sheet(isPresented:$help,onDismiss:{ hasSeenOnboarding = true }) { ConnectionHelp { address in if !model.busy { model.targetIP = address } } }
             .sheet(item:$model.challenge) { challenge in ChallengeView(model:model,challenge:challenge).interactiveDismissDisabled() }
         }
     }
@@ -93,7 +105,7 @@ struct RelayView: View {
                 HStack(spacing:14) {
                     rowIcon("shippingbox")
                     VStack(alignment:.leading,spacing:4) {
-                        Text(model.fileName.isEmpty ? "Выбрать IPA" : model.fileName).lineLimit(1)
+                        Text(model.fileName.isEmpty ? L("Выбрать IPA") : model.fileName).lineLimit(1)
                         if !model.fileName.isEmpty { Text(model.sizeLabel).font(.caption).foregroundStyle(.secondary) }
                     }
                     Spacer(minLength:4)
@@ -101,13 +113,13 @@ struct RelayView: View {
                 }.frame(minHeight:56).contentShape(Rectangle())
             }.buttonStyle(.plain).disabled(model.importing)
                 .accessibilityElement(children:.ignore)
-                .accessibilityLabel("Файл IPA")
-                .accessibilityValue(model.fileName.isEmpty ? "Не выбран" : "\(model.fileName), \(model.sizeLabel)")
-                .accessibilityHint("Открывает выбор файла приложения")
+                .accessibilityLabel(L("Файл IPA"))
+                .accessibilityValue(model.fileName.isEmpty ? L("Не выбран") : "\(model.fileName), \(model.sizeLabel)")
+                .accessibilityHint(L("Открывает выбор файла приложения"))
             divider
             HStack(spacing:14) {
-                rowIcon("wifi")
-                TextField("IP целевого устройства",text:$model.targetIP).keyboardType(.decimalPad).textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityLabel("IP целевого устройства")
+                rowIcon("network")
+                TextField(L("IP целевого устройства"),text:$model.targetIP).keyboardType(.decimalPad).textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityLabel(L("IP целевого устройства"))
             }.frame(minHeight:62)
             divider
             Button { account = true } label: {
@@ -120,8 +132,8 @@ struct RelayView: View {
             }.buttonStyle(.plain)
                 .accessibilityElement(children:.ignore)
                 .accessibilityLabel("Apple Account")
-                .accessibilityValue(model.hasAccount ? "Данные готовы к подписи" : "Нужны данные для подписи")
-                .accessibilityHint("Открывает данные аккаунта и разрешение подписи")
+                .accessibilityValue(model.hasAccount ? L("Данные готовы к подписи") : L("Нужны данные для подписи"))
+                .accessibilityHint(L("Открывает данные аккаунта и разрешение подписи"))
         }
     }
     private var liveSession: some View {
@@ -132,13 +144,13 @@ struct RelayView: View {
                         VStack(spacing:8) { Text(String(model.pin.prefix(3))); Text(String(model.pin.suffix(3))) }
                     } else { Text(model.pin) }
                 }.font(.system(size:pinFontSize,weight:.medium,design:.monospaced)).tracking(4).minimumScaleFactor(0.4).lineLimit(1).contentTransition(.numericText())
-                    .accessibilityElement(children:.ignore).accessibilityLabel("Код сопряжения").accessibilityValue(model.pin.map(String.init).joined(separator:" "))
-                Text("Введи на целевом устройстве").font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    .accessibilityElement(children:.ignore).accessibilityLabel(L("Код сопряжения")).accessibilityValue(model.pin.map(String.init).joined(separator:" "))
+                Text(L("Введи на целевом устройстве")).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
             } else if model.stage == .pairing || model.stage == .handshake {
                 Text("··· ···").font(.system(size:pinFontSize,weight:.medium,design:.monospaced)).tracking(6).foregroundStyle(.tertiary)
-                Text(model.stage == .handshake ? "Готовим код…" : "Код появится после подключения").font(.caption).foregroundStyle(.secondary)
+                Text(model.stage == .handshake ? L("Готовим код…") : L("Код появится после подключения")).font(.caption).foregroundStyle(.secondary)
             } else {
-                ProgressView(value:model.progress).tint(relayTint).accessibilityLabel("Ход установки").accessibilityValue(Text(model.progress,format:.percent.precision(.fractionLength(0))))
+                ProgressView(value:model.progress).tint(relayTint).accessibilityLabel(L("Ход установки")).accessibilityValue(Text(model.progress,format:.percent.precision(.fractionLength(0))))
                 Text(model.progress,format:.percent.precision(.fractionLength(0))).font(.system(.title2,design:.rounded).monospacedDigit()).contentTransition(.numericText())
             }
         }.frame(maxWidth:.infinity).padding(.vertical,8)
@@ -180,33 +192,27 @@ struct GlassAction: View {
     let action:()->Void
     var body: some View {
         if #available(iOS 26, *) {
-            if prominent { button.buttonStyle(.glassProminent) }
+            if prominent { button.buttonStyle(.glassProminent).tint(Color(white:symbol == "checkmark" ? 0.26 : 0.83)) }
             else {
                 button.buttonStyle(.plain).padding(.vertical,12)
                     .background(LinearGradient(colors:[.white.opacity(0.12),.white.opacity(0.05)],startPoint:.topLeading,endPoint:.bottomTrailing),in:Capsule())
                     .glassEffect(.regular.tint(.white.opacity(0.12)).interactive(),in:.capsule)
             }
-        } else { button.buttonStyle(.borderedProminent) }
+        } else { button.buttonStyle(.borderedProminent).tint(Color(white:symbol == "checkmark" ? 0.26 : 0.83)) }
     }
     private var button: some View {
-        Button { activation.toggle(); action() } label: { HStack(spacing:8) { Image(systemName:symbol).foregroundStyle(.white); Text(title).foregroundStyle(prominent ? Color.white : relayTint) }.font(.headline).frame(maxWidth:.infinity).frame(minHeight:44) }.controlSize(.large).disabled(!enabled).accessibilityHint(hint).sensoryFeedback(.selection,trigger:activation)
+        Button { activation.toggle(); action() } label: { HStack(spacing:8) { Image(systemName:symbol).foregroundStyle(prominent && symbol != "checkmark" ? Color.black : .white); Text(title).foregroundStyle(prominent && symbol != "checkmark" ? Color.black : relayTint) }.font(.headline).frame(maxWidth:.infinity).frame(minHeight:44) }.controlSize(.large).disabled(!enabled).accessibilityHint(hint).sensoryFeedback(.selection,trigger:activation)
     }
 }
 
-private struct RelayBackdrop: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.scenePhase) private var phase
+struct RelayBackdrop: View {
     var body: some View {
-        TimelineView(.animation(minimumInterval:1.0/24,paused:reduceMotion || phase != .active)) { context in
-            let t = reduceMotion ? 0 : context.date.timeIntervalSinceReferenceDate * 0.16
-            MeshGradient(width:3,height:3,points:[
-                [0,0],[0.5,0],[1,0],[0,0.5],[Float(0.5 + sin(t)*0.14),Float(0.5 + cos(t)*0.15)],[1,0.5],[0,1],[0.5,1],[1,1]
-            ],colors:[
-                Color(red:0.035,green:0.10,blue:0.17),Color(red:0.10,green:0.25,blue:0.34),Color(red:0.12,green:0.13,blue:0.27),
-                Color(red:0.07,green:0.24,blue:0.29),Color(red:0.12,green:0.34,blue:0.36),Color(red:0.17,green:0.17,blue:0.34),
-                Color(red:0.03,green:0.06,blue:0.12),Color(red:0.04,green:0.09,blue:0.17),Color(red:0.07,green:0.05,blue:0.16)
-            ])
-        }.ignoresSafeArea()
+        ZStack {
+            Color(white:0.055)
+            RadialGradient(colors:[Color(white:0.28),Color(white:0.11),.clear],
+                           center:.topLeading,startRadius:0,endRadius:660)
+            LinearGradient(colors:[.clear,.black.opacity(0.55)],startPoint:.center,endPoint:.bottom)
+        }.ignoresSafeArea().accessibilityHidden(true)
     }
 }
 
@@ -219,8 +225,8 @@ private struct InstallationSuccess: View {
             .symbolRenderingMode(.palette).foregroundStyle(.white,relayTint.opacity(0.35))
             .font(.system(size:size,weight:.light))
             .scaleEffect(appeared ? 1 : 0.65).opacity(appeared ? 1 : 0)
-            .symbolEffect(.bounce,value:reduceMotion ? false : appeared)
-            .onAppear { withAnimation(reduceMotion ? nil : .spring(response:0.5,dampingFraction:0.6)) { appeared = true } }
+
+            .onAppear { withAnimation(reduceMotion ? nil : .smooth(duration:0.48)) { appeared = true } }
     }
 }
 
